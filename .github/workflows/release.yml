@@ -3,6 +3,7 @@ name: Release
 # Cut a release by bumping "version" in package.json on main, then pushing a matching tag:
 #   git tag v0.2.0 && git push origin v0.2.0
 # Tags with a suffix (v0.2.0-rc.1) publish as a prerelease and do not move the "latest" image tag.
+# Older GitHub releases are deleted afterwards (tags are kept): see "Remove superseded releases".
 
 on:
   push:
@@ -111,3 +112,31 @@ jobs:
             echo "docker pull ${IMAGE}:${GITHUB_REF_NAME#v}"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Keeps one release (and, while an RC is out, one pre-release). Only releases are deleted: the git
+      # tags stay. A stable release removes every older release and pre-release; a pre-release removes
+      # older pre-releases and leaves the current stable release alone. Drafts and anything newer than
+      # this tag are never touched, so an older tag's run finishing late can't delete a newer release.
+      - name: Remove superseded releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Semver-ish ordering with GNU sort -V; "-" becomes "~" so 1.0.0-rc.1 sorts before 1.0.0.
+          key() { printf '%s' "${1#v}" | tr '-' '~'; }
+          older() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$(key "$1")" "$(key "$2")" | sort -V | head -n1)" = "$(key "$1")" ]; }
+
+          current="$GITHUB_REF_NAME"
+          current_is_pre=false
+          case "$current" in *-*) current_is_pre=true ;; esac
+
+          gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
+            --json tagName,isPrerelease,isDraft \
+            --jq '.[] | select(.isDraft | not) | "\(.tagName) \(.isPrerelease)"' |
+          while read -r tag is_pre; do
+            older "$tag" "$current" || continue
+            if [ "$current_is_pre" = true ] && [ "$is_pre" != true ]; then
+              continue
+            fi
+            echo "Deleting superseded release $tag (tag kept)"
+            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
+          done

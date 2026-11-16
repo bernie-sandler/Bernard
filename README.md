@@ -448,6 +448,8 @@ To release ([`release.yml`](.github/workflows/release.yml)):
 
 The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release with generated notes. A tag with a suffix, like `v0.2.0-rc.1`, becomes a prerelease and leaves `latest` alone.
 
+Only the newest release is kept on GitHub. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags and Docker image tags are never removed, so any version can still be checked out or pulled.
+
 ## Troubleshooting
 
 | Symptom                                                   | Fix                                                                                                                                                                                      |
