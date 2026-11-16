@@ -26,6 +26,11 @@ export const EXTRA_NODES: ExtraNode[] = [
     node: 'dashboard:logs',
     description: 'View stored logs (including deleted message content) in the dashboard',
   },
+  { node: 'dashboard:audit', description: 'View the audit log of config changes and dashboard actions' },
+  {
+    node: 'config:settings',
+    description: 'Dashboard settings without a slash command (moderation DMs, Administrator bypass)',
+  },
 ];
 
 /**

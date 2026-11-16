@@ -365,6 +365,29 @@ export class DashboardService {
     };
   }
 
+  /** Readable label for an audit row's target (role + node, tier, channel or member name). */
+  auditTargetLabel(action: string, target: string | null, before: unknown, after: unknown): string | null {
+    if (!target) return null;
+    const obj = (v: unknown) => (typeof v === 'object' && v !== null ? (v as Record<string, unknown>) : {});
+    if (action.startsWith('permissions.')) {
+      const [roleId, ...rest] = target.split(':');
+      return `${this.s.guild.roleName(roleId!)} ${rest.join(':')}`;
+    }
+    if (action.startsWith('tiers.')) {
+      const name = obj(after).name ?? obj(before).name;
+      return typeof name === 'string' ? `Tier ${name}` : null;
+    }
+    if (action.startsWith('voice.hub.')) {
+      const c = this.s.guild.getChannel(target);
+      return c ? `#${c.name}` : null;
+    }
+    if (action.startsWith('dashboard.member.') || action === 'dashboard.login') {
+      return this.userRefs([target]).get(target)?.name ?? null;
+    }
+    if (action === 'dashboard.command') return `/${target}`;
+    return null;
+  }
+
   // ── Moderation & logs ────────────────────────────────────────────────────
 
   listCases(q: {

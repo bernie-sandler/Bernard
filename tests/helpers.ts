@@ -79,6 +79,9 @@ export class FakeGuild implements GuildPort {
   getChannel(channelId: string): ChannelInfo | null {
     return this.channels.get(channelId) ?? null;
   }
+  listChannels(): ChannelInfo[] {
+    return [...this.channels.values()];
+  }
   roleName(roleId: string): string {
     if (roleId === GUILD_ID) return '@everyone';
     return `@${this.roles.get(roleId)?.name ?? roleId}`;

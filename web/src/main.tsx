@@ -20,6 +20,16 @@ const ModerationPage = lazy(() =>
   import('./pages/Moderation.js').then((m) => ({ default: m.ModerationPage })),
 );
 const LogsPage = lazy(() => import('./pages/Logs.js').then((m) => ({ default: m.LogsPage })));
+const CommandRunnerPage = lazy(() =>
+  import('./pages/CommandRunner.js').then((m) => ({ default: m.CommandRunnerPage })),
+);
+const PermissionsPage = lazy(() =>
+  import('./pages/Permissions.js').then((m) => ({ default: m.PermissionsPage })),
+);
+const TiersPage = lazy(() => import('./pages/Tiers.js').then((m) => ({ default: m.TiersPage })));
+const VoicePage = lazy(() => import('./pages/Voice.js').then((m) => ({ default: m.VoicePage })));
+const SettingsPage = lazy(() => import('./pages/Settings.js').then((m) => ({ default: m.SettingsPage })));
+const AuditPage = lazy(() => import('./pages/Audit.js').then((m) => ({ default: m.AuditPage })));
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -50,6 +60,12 @@ createRoot(document.getElementById('root')!).render(
               <Route path="members/:id" element={<MemberDetailPage />} />
               <Route path="moderation" element={<ModerationPage />} />
               <Route path="logs" element={<LogsPage />} />
+              <Route path="commands" element={<CommandRunnerPage />} />
+              <Route path="permissions" element={<PermissionsPage />} />
+              <Route path="tiers" element={<TiersPage />} />
+              <Route path="voice" element={<VoicePage />} />
+              <Route path="settings" element={<SettingsPage />} />
+              <Route path="audit" element={<AuditPage />} />
               <Route path="*" element={<NotFoundPage />} />
             </Route>
           </Routes>

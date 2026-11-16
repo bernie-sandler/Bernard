@@ -55,6 +55,8 @@ export interface ChannelInfo {
   name: string;
   kind: ChannelKindName;
   parentId: string | null;
+  /** Sort position within its parent (lower first). */
+  position?: number;
 }
 
 export interface GuildSummary {
@@ -78,6 +80,8 @@ export interface GuildPort {
   getUser(userId: string): Promise<UserInfo | null>;
   getRole(roleId: string): RoleInfo | null;
   getChannel(channelId: string): ChannelInfo | null;
+  /** Every channel except threads, sorted the way Discord shows them. */
+  listChannels(): ChannelInfo[];
   /** "@everyone" for the guild ID, "@Name" for known roles, otherwise a mention-ish fallback. */
   roleName(roleId: string): string;
   /** The bot's own member: ID and highest role position. */

@@ -1,4 +1,4 @@
-import { and, desc, eq, lt } from 'drizzle-orm';
+import { and, desc, eq, like, lt, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { auditLog } from '../db/schema.js';
 
@@ -37,14 +37,25 @@ export class AuditService {
       .run();
   }
 
-  list(opts: { limit?: number; beforeId?: number } = {}) {
-    const where = opts.beforeId
-      ? and(eq(auditLog.guildId, this.guildId), lt(auditLog.id, opts.beforeId))
-      : eq(auditLog.guildId, this.guildId);
+  list(
+    opts: {
+      limit?: number;
+      beforeId?: number;
+      actorId?: string;
+      actionPrefix?: string;
+      source?: AuditActor['source'];
+    } = {},
+  ) {
+    const where: SQL[] = [eq(auditLog.guildId, this.guildId)];
+    if (opts.beforeId) where.push(lt(auditLog.id, opts.beforeId));
+    if (opts.actorId) where.push(eq(auditLog.actorId, opts.actorId));
+    if (opts.source) where.push(eq(auditLog.source, opts.source));
+    // Prefix match (e.g. "tiers." or "settings."); LIKE wildcards in the input are dropped.
+    if (opts.actionPrefix) where.push(like(auditLog.action, `${opts.actionPrefix.replace(/[%_\\]/g, '')}%`));
     return this.db
       .select()
       .from(auditLog)
-      .where(where)
+      .where(and(...where))
       .orderBy(desc(auditLog.id))
       .limit(Math.min(opts.limit ?? 50, 200))
       .all();

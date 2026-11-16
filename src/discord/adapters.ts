@@ -157,6 +157,26 @@ export class DiscordGuildPort extends GuildBound implements GuildPort {
     return { id: r.id, name: r.name, position: r.position, managed: r.managed, color: r.color };
   }
 
+  listChannels(): ChannelInfo[] {
+    const all = [...this.guild().channels.cache.values()].filter((c) => !c.isThread());
+    const pos = (c: (typeof all)[number]) => ('rawPosition' in c ? c.rawPosition : 0);
+    const catPos = new Map(
+      all.filter((c) => c.type === ChannelType.GuildCategory).map((c) => [c.id, pos(c)]),
+    );
+    // Uncategorised first, then each category followed by its children (Discord's order).
+    const key = (c: (typeof all)[number]): [number, number, number] =>
+      c.type === ChannelType.GuildCategory
+        ? [catPos.get(c.id)! + 1, 0, 0]
+        : [c.parentId ? (catPos.get(c.parentId) ?? 0) + 1 : 0, 1, pos(c)];
+    return all
+      .sort((a, b) => {
+        const ka = key(a);
+        const kb = key(b);
+        return ka[0] - kb[0] || ka[1] - kb[1] || ka[2] - kb[2];
+      })
+      .map((c) => ({ id: c.id, name: c.name, kind: channelKind(c), parentId: c.parentId, position: pos(c) }));
+  }
+
   getChannel(channelId: string): ChannelInfo | null {
     const c = this.guild().channels.cache.get(channelId);
     if (!c) return null;

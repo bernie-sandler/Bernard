@@ -10,6 +10,7 @@ import type { Container } from '../services/container.js';
 import { DashboardService, type JobInfo } from '../services/dashboard.js';
 import { createAuth } from './auth.js';
 import { errorHandler } from './http.js';
+import { registerManagementRoutes } from './manage.js';
 import { DiscordOAuthClient, type OAuthClient } from './oauth.js';
 import { registerDashboardRoutes } from './routes.js';
 
@@ -92,6 +93,7 @@ export async function createApiServer(deps: ApiDeps) {
       api.addHook('preHandler', auth.csrf);
       auth.registerMe(api);
       registerDashboardRoutes(api, services, dashboard);
+      registerManagementRoutes(api, services, dashboard, container.executor);
     },
     { prefix: '/api' },
   );

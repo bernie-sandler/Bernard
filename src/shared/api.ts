@@ -165,3 +165,160 @@ export interface ActionResponse {
   message: string;
   caseNumber?: number;
 }
+
+// ── Phase 6: management pages ────────────────────────────────────────────
+
+export interface ChannelDto {
+  id: string;
+  name: string;
+  kind: string;
+  parentId: string | null;
+}
+
+/** A command option as the dashboard form needs it (mirrors src/shared/commandOptions.ts). */
+export interface CommandOptionDto {
+  name: string;
+  kind: 'string' | 'integer' | 'number' | 'boolean' | 'user' | 'role' | 'channel' | 'duration';
+  description: string;
+  /** Required on the dashboard (context-default channels are required here). */
+  required: boolean;
+  choices?: { name: string; value: string | number }[];
+  autocomplete?: boolean;
+  multiline?: boolean;
+  min?: number;
+  max?: number;
+  minLength?: number;
+  maxLength?: number;
+  channelTypes?: string[];
+}
+
+export interface CommandDto {
+  fullName: string;
+  description: string;
+  node: string;
+  category: string;
+  options: CommandOptionDto[];
+}
+
+export interface RunCommandResponse {
+  outcome: 'ok' | 'failed' | 'denied' | 'invalid' | 'error';
+  result: {
+    ok: boolean;
+    content?: string;
+    embeds?: {
+      title?: string;
+      description?: string;
+      color?: number;
+      fields?: { name: string; value: string; inline?: boolean }[];
+      footer?: string;
+      timestamp?: string;
+      thumbnailUrl?: string;
+    }[];
+  };
+  mentions: Mentions;
+}
+
+export type PermissionValue = boolean | null;
+
+export interface PermissionsResponse {
+  roles: { id: string; name: string; color: number; position: number; isEveryone: boolean }[];
+  nodes: { node: string; description: string }[];
+  rules: { roleId: string; node: string; allow: boolean }[];
+  adminBypass: boolean;
+}
+
+export interface PermissionCheckResponse {
+  node: string;
+  allowed: boolean;
+  reason: 'owner' | 'administrator' | 'rule' | 'default';
+  explanation: string;
+  rule: { roleId: string; node: string; allow: boolean } | null;
+  member: UserRef;
+}
+
+export interface TierDto {
+  id: number;
+  name: string;
+  roleId: string;
+  roleName: string | null;
+  roleColor: number;
+  minTenureDays: number;
+  minActivity: number;
+  position: number;
+  members: number;
+  manageable: boolean;
+  problem: string | null;
+}
+
+export interface SyncSummaryDto {
+  at: string;
+  reason: string;
+  basis?: 'full' | 'tenure';
+  members: number;
+  changed: number;
+  skipped: number;
+  errors: number;
+}
+
+export interface TiersResponse {
+  tiers: TierDto[];
+  issues: string[];
+  maxTiers: number;
+  lastSync: SyncSummaryDto | null;
+  lastTenureSync: SyncSummaryDto | null;
+}
+
+export interface HubDto {
+  channelId: string;
+  channelName: string | null;
+  type: 'public' | 'private';
+  categoryId: string;
+  categoryName: string | null;
+  nameTemplate: string;
+  defaultLimit: number;
+  hideFromEveryone: boolean;
+}
+
+export interface VoiceResponse {
+  hubs: HubDto[];
+  active: {
+    channelId: string;
+    name: string;
+    hubChannelId: string;
+    owner: UserRef | null;
+    members: UserRef[];
+  }[];
+}
+
+export type SettingsSection =
+  | 'logs'
+  | 'moderation'
+  | 'permissions'
+  | 'voice'
+  | 'activity'
+  | 'tenure'
+  | 'tiers';
+
+export interface SettingsResponse {
+  /** The full settings object (see src/config/settings.ts). */
+  settings: Record<SettingsSection, Record<string, unknown>>;
+  editable: Record<SettingsSection, boolean>;
+}
+
+export interface AuditEntryDto {
+  id: number;
+  actor: UserRef;
+  source: 'slash' | 'dashboard' | 'system';
+  action: string;
+  target: string | null;
+  /** Human-readable target (role/tier/channel/member name) when it can be resolved. */
+  targetLabel: string | null;
+  before: unknown;
+  after: unknown;
+  createdAt: string;
+}
+
+export interface AuditListResponse {
+  items: AuditEntryDto[];
+  nextBefore: number | null;
+}

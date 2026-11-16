@@ -19,7 +19,7 @@ export function setCsrfToken(token: string | null): void {
 /** JSON fetch against /api with the session cookie and, for writes, the CSRF token. */
 export async function api<T>(
   path: string,
-  opts: { method?: 'GET' | 'POST'; body?: unknown } = {},
+  opts: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; body?: unknown } = {},
 ): Promise<T> {
   const method = opts.method ?? 'GET';
   const headers: Record<string, string> = { Accept: 'application/json' };
