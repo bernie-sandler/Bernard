@@ -1,4 +1,27 @@
-# bernard
+<p align="center">
+  <img src="shared/assets/logo.png" alt="Bernard logo" width="300">
+</p>
+
+<h1 align="center">Bernard</h1>
+
+<p align="center">
+  <strong>A self-hosted Discord bot and admin dashboard for your server.</strong><br>
+  <em>Thoughtful server management, without the bloat.</em>
+</p>
+
+<p align="center">
+  <img alt="Project status: In Development" src="https://img.shields.io/badge/status-In%20Development-3178C6">
+</p>
+
+<p align="center">
+  <img alt="Built with Node.js" src="https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white">
+  <img alt="Built with TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white">
+  <img alt="Built with Discord.js" src="https://img.shields.io/badge/Discord.js-5865F2?logo=discord&logoColor=white">
+  <img alt="Built with SQLite" src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white">
+  <img alt="Built with Docker" src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white">
+</p>
+
+---
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
