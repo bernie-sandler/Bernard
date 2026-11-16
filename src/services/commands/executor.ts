@@ -112,8 +112,10 @@ export class CommandExecutor {
     const args = formatArgs(command.leaf.options, req.rawInput);
     const allowed = outcome !== 'denied';
     const label = allowed ? 'used' : 'was denied';
-    try {
-      await this.services.logs.record({
+    // Not awaited: posting to the log channel is a Discord API call, and the user's reply shouldn't wait
+    // on it (slash commands must be answered within 3s). The database row is written synchronously.
+    this.services.logs
+      .record({
         type: 'commands',
         event: allowed ? 'command_used' : 'command_denied',
         actorId: actor.userId,
@@ -140,10 +142,8 @@ export class CommandExecutor {
             { name: 'Outcome', value: outcome, inline: true },
           ],
         },
-      });
-    } catch (err) {
-      this.logger.error({ err }, 'Failed to write commands log');
-    }
+      })
+      .catch((err) => this.logger.error({ err }, 'Failed to write commands log'));
     return { result, outcome };
   }
 }

@@ -14,9 +14,6 @@ import type { Actor } from '../services/commands/types.js';
 import type { Services } from '../services/container.js';
 import type { CommandResult } from '../shared/commandResult.js';
 
-/** Defer if a command hasn't answered within this window (Discord's limit is 3s). */
-const DEFER_AFTER_MS = 2000;
-
 export function actorFromMember(member: GuildMember): Actor {
   const info = toMemberInfo(member);
   return {
@@ -101,12 +98,8 @@ export function createInteractionHandler(deps: {
       return;
     }
     const leafEphemeral = command.leaf.ephemeral !== false;
+    const receivedAt = Date.now();
     let deferred: Promise<unknown> | null = null;
-    let allowed = false;
-    const timer = setTimeout(() => {
-      // Only defer once the permission check has passed, so denials can still reply ephemerally.
-      if (allowed) deferred = i.deferReply(leafEphemeral ? { flags: MessageFlags.Ephemeral } : {});
-    }, DEFER_AFTER_MS);
 
     try {
       const { result } = await executor.run({
@@ -116,10 +109,13 @@ export function createInteractionHandler(deps: {
         channelId: i.channelId,
         rawInput: extractRawInput(i, command),
         onAllowed: () => {
-          allowed = true;
+          // Acknowledge as soon as the permission check passes: Discord drops interactions that aren't
+          // answered within 3s, and network latency can eat most of that before we even see it.
+          // Denials skip this so they can still reply ephemerally.
+          deferred = i.deferReply(leafEphemeral ? { flags: MessageFlags.Ephemeral } : {});
+          deferred.catch(() => {}); // surfaced when awaited below
         },
       });
-      clearTimeout(timer);
       const ephemeral = result.ephemeral ?? (!result.ok || leafEphemeral);
       if (deferred) {
         await deferred;
@@ -135,8 +131,17 @@ export function createInteractionHandler(deps: {
         await i.reply(toReply(result, ephemeral));
       }
     } catch (err) {
-      clearTimeout(timer);
-      logger.error({ err, command: command.fullName }, 'Failed to respond to interaction');
+      logger.error(
+        {
+          err,
+          command: command.fullName,
+          // How old the interaction was when it reached us, and how long we spent on it. A large
+          // ageOnArrivalMs points at gateway/network lag (or a skewed host clock), not the bot.
+          ageOnArrivalMs: receivedAt - i.createdTimestamp,
+          handlingMs: Date.now() - receivedAt,
+        },
+        'Failed to respond to interaction',
+      );
       const msg = { content: 'Something went wrong.', flags: MessageFlags.Ephemeral } as const;
       if (i.deferred || i.replied) await i.followUp(msg).catch(() => {});
       else await i.reply(msg).catch(() => {});
