@@ -2,7 +2,7 @@
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-> **Status: Phase 3 of 7 (Voice).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs with owner commands and startup reconciliation, `/userinfo`, `/serverinfo`, `/healthz` and Docker. Tenure and activity tiers, and the dashboard, arrive in later phases.
+> **Status: Phase 4 of 7 (Tenure & Activity).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs, tenure tracking with backfill, activity scoring, up to 10 tiers with scheduled sync and demotion, `/rank`, `/userinfo`, `/serverinfo`, `/healthz` and Docker. The web dashboard arrives in phases 5 and 6.
 
 ## Requirements
 
@@ -198,6 +198,63 @@ Members join a **hub** voice channel. The bot then creates a channel for them in
 | `/vc claim`              | `voice:claim`                | Take over a channel whose owner left.                                                                        |
 
 `voice:*` is allowed for @everyone by default, but these commands only work for the owner of the temporary channel you're in. `/voice ...` needs `config:voice`.
+
+## Tenure, activity and tiers
+
+### Tenure
+
+- **Tenure** is the number of days since the member joined.
+- **Backfill:** at every startup the bot syncs the member list. New members are backfilled from Discord's join date, and anyone who left while the bot was offline is marked as gone.
+- **First join:** Discord only reports the most recent join, so the first join from before the bot arrived can't be recovered. From then on, the bot keeps the earliest join it has seen.
+- **Rejoins:** when someone leaves and rejoins, tenure restarts by default. Use `/activity settings reset_tenure_on_rejoin:false` to keep it. A newer join date seen at startup counts as a rejoin.
+
+### Activity
+
+- **No message content is stored.** The score is built from two numbers kept per member per day: messages that earned a point, and voice minutes.
+- **Messages:** 1 point per message, at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points.
+- **Voice:** points per minute in voice (default 1).
+  - AFK-channel time doesn't count, nor does time with no other human in the channel (bots don't count as company).
+  - Self-deafened time doesn't count by default. Change this with `count_deafened`.
+- **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too.
+- **History:** daily rows are kept for 400 days, for the dashboard charts.
+
+```
+/activity settings message_cooldown:60 points_per_message:1 points_per_voice_minute:1 window_days:30
+```
+
+### Tiers
+
+You can have up to 10 tiers. Each has a name, a role, a minimum tenure in days and a minimum activity score over the window. A member earns a tier when they meet **both** thresholds. Set either one to 0 to make a tenure-only or activity-only tier.
+
+```
+/tiers add name:Newcomer role:@Newcomer min_tenure_days:0 min_activity:0
+/tiers add name:Regular role:@Regular min_tenure_days:30 min_activity:100
+/tiers add name:Veteran role:@Veteran min_tenure_days:365 min_activity:0
+/tiers settings mode:highest_only demotion:true grace_days:7 sync_minutes:60
+/tiers exclude role:@Staff
+/tiers check
+/tiers sync
+```
+
+| Command                                      | Node              | What it does                                                                                                                                                   |
+| -------------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tiers list`                                | `config:tiers`    | Tiers, member counts, settings, last sync and any problems                                                                                                     |
+| `/tiers add`, `/tiers edit`, `/tiers remove` | `config:tiers`    | Manage tiers. Position 1 is the lowest.                                                                                                                        |
+| `/tiers check`                               | `config:tiers`    | Checks that tier roles exist, aren't managed, and sit below the bot's highest role. Also warns when a higher tier is no harder to reach than the one below it. |
+| `/tiers sync`                                | `config:tiers`    | Re-evaluate every member now                                                                                                                                   |
+| `/tiers settings`, `/tiers exclude`          | `config:tiers`    | Mode, demotion and grace period, sync interval, excluded roles                                                                                                 |
+| `/activity settings`                         | `config:activity` | Scoring weights, cooldown, window, tenure reset on rejoin                                                                                                      |
+| `/rank [user]`                               | `public:rank`     | Tenure, activity score and breakdown, leaderboard position, current tier and what's needed for the next one. The reply is public.                              |
+
+- **Mode:** `highest_only` (the default) keeps just the highest earned tier role and removes lower ones. `stack` keeps every earned tier role.
+- **Demotion** is on by default. A member who falls below a tier they hold keeps it for `grace_days` (default 7) before losing it. With demotion off, held tiers are never removed.
+- **Excluded roles** (for example staff, or bots, which are always skipped) are left alone.
+- **When tiers are evaluated:**
+  - everyone, every `sync_minutes` (default 60);
+  - a single member, a few seconds after their score crosses a tier threshold, and when they join (so a tier with 0 tenure and 0 activity applies straight away);
+  - everyone, on demand with `/tiers sync`.
+- Tier changes are posted to the `members` log.
+- **The bot's role must sit above every tier role.** Tier roles it can't manage are skipped and reported by `/tiers check`, `/tiers list` and a warning at startup.
 
 ## Permissions model
 

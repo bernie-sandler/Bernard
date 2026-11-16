@@ -86,6 +86,12 @@ export class FakeGuild implements GuildPort {
   botMember() {
     return { userId: BOT_ID, highestRolePosition: this.botRolePosition };
   }
+  async listMembers(): Promise<MemberInfo[]> {
+    return [...this.members.values()];
+  }
+  roleMemberCount(roleId: string): number {
+    return [...this.members.values()].filter((m) => m.roleIds.includes(roleId)).length;
+  }
   addRole(name: string, position = 1, extra: Partial<RoleInfo> = {}): string {
     const id = sid();
     this.roles.set(id, { id, name, position, managed: false, color: 0, ...extra });
@@ -241,6 +247,24 @@ export class FakeVoice implements VoicePort {
   pending: { userId: string; from: string | null; to: string | null }[] = [];
   failCreate = false;
   failMove = false;
+  deafened = new Set<string>();
+  afk: string | null = null;
+
+  snapshot() {
+    const byChannel = new Map<
+      string,
+      { channelId: string; members: { userId: string; isBot: boolean; selfDeaf: boolean }[] }
+    >();
+    for (const [userId, channelId] of this.states) {
+      const entry = byChannel.get(channelId) ?? { channelId, members: [] };
+      entry.members.push({ userId, isBot: this.bots.has(userId), selfDeaf: this.deafened.has(userId) });
+      byChannel.set(channelId, entry);
+    }
+    return [...byChannel.values()];
+  }
+  afkChannelId() {
+    return this.afk;
+  }
 
   constructor(private readonly guild: FakeGuild) {}
 

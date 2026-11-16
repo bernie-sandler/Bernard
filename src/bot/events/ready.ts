@@ -41,6 +41,21 @@ export async function onReady(deps: {
     logger,
   });
 
+  // Tenure: backfill/refresh the members table from the live member list.
+  const firstRun = deps.state.get('backfill_done') === null;
+  const sync = services.members.syncAll(await services.guild.listMembers());
+  deps.state.set('backfill_done', new Date().toISOString());
+  logger.info(
+    sync,
+    firstRun
+      ? "Backfilled member tenure from Discord's join dates (first join before the bot arrived is not recoverable)"
+      : 'Member list synced',
+  );
+
+  const tierCheck = services.tiers.check();
+  if (!tierCheck.ok)
+    logger.warn({ issues: tierCheck.issues }, 'Tier configuration has problems (see /tiers check)');
+
   const voice = await services.voice.reconcile();
   logger.info(voice, 'Voice channels reconciled');
 

@@ -118,6 +118,11 @@ export class VoiceService {
     }));
   }
 
+  /** Voice states for activity tracking. */
+  activitySnapshot() {
+    return { channels: this.d.voice.snapshot(), afkChannelId: this.d.voice.afkChannelId() };
+  }
+
   // ── Hub configuration ────────────────────────────────────────────────────
 
   addHub(

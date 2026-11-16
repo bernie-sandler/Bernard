@@ -82,6 +82,10 @@ export interface GuildPort {
   roleName(roleId: string): string;
   /** The bot's own member: ID and highest role position. */
   botMember(): { userId: string; highestRolePosition: number };
+  /** Every current member (fetches the full list from Discord). */
+  listMembers(): Promise<MemberInfo[]>;
+  /** How many cached members have a role. */
+  roleMemberCount(roleId: string): number;
 }
 
 export interface MessageSummary {
@@ -140,8 +144,16 @@ export interface CreateVoiceChannelOptions {
   hideFromEveryone: boolean;
 }
 
-/** Join-to-create voice channel operations. */
+export interface VoiceChannelSnapshot {
+  channelId: string;
+  members: { userId: string; isBot: boolean; selfDeaf: boolean }[];
+}
+
+/** Join-to-create voice channel operations, plus voice state snapshots for activity tracking. */
 export interface VoicePort {
+  /** Everyone currently connected to voice, grouped by channel. */
+  snapshot(): VoiceChannelSnapshot[];
+  afkChannelId(): string | null;
   createVoiceChannel(opts: CreateVoiceChannelOptions): Promise<string>;
   deleteChannel(channelId: string, reason?: string): Promise<void>;
   /** Move a member to a voice channel, or disconnect them with null. */

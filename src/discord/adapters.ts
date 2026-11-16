@@ -169,6 +169,15 @@ export class DiscordGuildPort extends GuildBound implements GuildPort {
     return r ? `@${r.name}` : `<@&${roleId}>`;
   }
 
+  async listMembers(): Promise<MemberInfo[]> {
+    const members = await this.guild().members.fetch();
+    return [...members.values()].map(toMemberInfo);
+  }
+
+  roleMemberCount(roleId: string): number {
+    return this.guild().roles.cache.get(roleId)?.members.size ?? 0;
+  }
+
   botMember(): { userId: string; highestRolePosition: number } {
     const me = this.guild().members.me;
     if (!me) throw new Error('Bot member not cached');

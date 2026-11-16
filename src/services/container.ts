@@ -1,16 +1,20 @@
 import type { Db } from '../db/client.js';
 import type { BotInfoPort, GuildPort, MessengerPort, ModerationPort, VoicePort } from '../discord/ports.js';
 import type { Logger } from '../logger.js';
+import { ActivityService } from './activity.js';
 import { AuditService } from './audit.js';
+import { BotStateStore } from './botState.js';
 import { CommandExecutor } from './commands/executor.js';
 import { CommandRegistry } from './commands/registry.js';
 import type { CommandDefinition } from './commands/types.js';
 import { EventLogService } from './eventLog.js';
 import { LogService } from './logs.js';
+import { MemberService } from './members.js';
 import { MessageCache } from './messageCache.js';
 import { ModerationService } from './moderation/service.js';
 import { PermissionService } from './permissions/service.js';
 import { SettingsService } from './settings.js';
+import { TierService } from './tiers.js';
 import { VoiceService } from './voice.js';
 
 /** Everything commands and API routes can reach. */
@@ -28,6 +32,10 @@ export interface Services {
   messageCache: MessageCache;
   moderation: ModerationService;
   voice: VoiceService;
+  members: MemberService;
+  activity: ActivityService;
+  tiers: TierService;
+  state: BotStateStore;
   registry: CommandRegistry;
 }
 
@@ -70,6 +78,30 @@ export function createContainer(deps: ContainerDeps): Container {
   });
 
   const voice = new VoiceService({ db, guildId, voice: deps.voice, guild, settings, audit, logger });
+  const state = new BotStateStore(db, guildId);
+  const members = new MemberService(db, guildId, settings);
+  // Activity and tiers reference each other (thresholds / crossing callback), so wire them lazily.
+  let tiers: TierService | null = null;
+  const activity = new ActivityService({
+    db,
+    guildId,
+    settings,
+    thresholds: () => tiers?.list().map((t) => t.minActivity) ?? [],
+    onThresholdCrossed: (userId) => tiers?.queueEvaluate(userId),
+  });
+  tiers = new TierService({
+    db,
+    guildId,
+    guild,
+    mod: deps.mod,
+    settings,
+    audit,
+    eventLog,
+    activity,
+    members,
+    state,
+    logger,
+  });
 
   const services: Services = {
     db,
@@ -85,6 +117,10 @@ export function createContainer(deps: ContainerDeps): Container {
     messageCache,
     moderation,
     voice,
+    members,
+    activity,
+    tiers,
+    state,
     registry,
   };
   return { services, executor: new CommandExecutor(services, logger) };

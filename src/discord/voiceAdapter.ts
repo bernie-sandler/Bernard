@@ -6,7 +6,7 @@ import {
   PermissionFlagsBits,
   type VoiceChannel,
 } from 'discord.js';
-import type { CreateVoiceChannelOptions, VoicePort } from './ports.js';
+import type { CreateVoiceChannelOptions, VoiceChannelSnapshot, VoicePort } from './ports.js';
 
 /** VoicePort backed by discord.js. Voice states come from the GuildVoiceStates intent cache. */
 export class DiscordVoice implements VoicePort {
@@ -26,6 +26,25 @@ export class DiscordVoice implements VoicePort {
     if (!c || c.type !== ChannelType.GuildVoice)
       throw new Error(`Channel ${channelId} is not a voice channel`);
     return c;
+  }
+
+  snapshot(): VoiceChannelSnapshot[] {
+    const byChannel = new Map<string, VoiceChannelSnapshot>();
+    for (const vs of this.guild().voiceStates.cache.values()) {
+      if (!vs.channelId) continue;
+      const entry = byChannel.get(vs.channelId) ?? { channelId: vs.channelId, members: [] };
+      entry.members.push({
+        userId: vs.id,
+        isBot: vs.member?.user.bot ?? false,
+        selfDeaf: Boolean(vs.selfDeaf),
+      });
+      byChannel.set(vs.channelId, entry);
+    }
+    return [...byChannel.values()];
+  }
+
+  afkChannelId(): string | null {
+    return this.guild().afkChannelId;
   }
 
   async createVoiceChannel(opts: CreateVoiceChannelOptions): Promise<string> {
