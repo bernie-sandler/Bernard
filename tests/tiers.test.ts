@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { activityDaily, logs } from '../src/db/schema.js';
+import { activityDaily, logs, memberTierState } from '../src/db/schema.js';
 import { dateKey, eligibleVoiceUsers } from '../src/services/activity.js';
 import { DAY_MS, tenureDays } from '../src/services/members.js';
 import { type PlanInput, planTiers, type TierDef } from '../src/services/tiers.js';
@@ -478,5 +478,88 @@ describe('commands', () => {
       .all()
       .map((l) => `${l.type}:${l.event}`);
     expect(types).toContain('members:tier_change');
+  });
+});
+
+describe('tenure-only sync', () => {
+  /** Mirrors a fresh install: long-standing members, no activity yet, some already holding tier roles. */
+  function setup(mode: 'highest_only' | 'stack' = 'highest_only') {
+    t.services.settings.update(ADMIN, 'test', (s) => {
+      s.tiers.mode = mode;
+    });
+    const role = (name: string) => t.guild.addRole(name, 5);
+    const newcomer = t.services.tiers.add(ADMIN, {
+      name: 'New Comer',
+      roleId: role('New Comer'),
+      minTenureDays: 0,
+      minActivity: 0,
+    });
+    const member = t.services.tiers.add(ADMIN, {
+      name: 'Member',
+      roleId: role('Member'),
+      minTenureDays: 30,
+      minActivity: 60,
+    });
+    const trusted = t.services.tiers.add(ADMIN, {
+      name: 'Trusted',
+      roleId: role('Trusted'),
+      minTenureDays: 1825,
+      minActivity: 6000,
+    });
+    const ago = (days: number) => new Date(NOW.getTime() - days * DAY_MS);
+    const fresh = t.guild.addMember({ joinedAt: ago(40) });
+    const holder = t.guild.addMember({ joinedAt: ago(400), roleIds: [trusted.roleId] });
+    const old = t.guild.addMember({ joinedAt: ago(2000), roleIds: [member.roleId] });
+    for (const m of [fresh, holder, old]) t.services.members.recordJoin(m, m.joinedAt!);
+    return { newcomer, member, trusted, fresh, holder, old };
+  }
+
+  it('promotes by tenure alone and never removes a tier someone already holds', async () => {
+    const { member, trusted, fresh, holder, old } = setup();
+    const s = await t.services.tiers.syncAll('test', { tenureOnly: true });
+    expect(s).toMatchObject({ basis: 'tenure', members: 3, changed: 2, errors: 0 });
+    expect(fresh.roleIds).toContain(member.roleId); // 40 days → Member, despite 0 activity
+    expect(holder.roleIds).toEqual(expect.arrayContaining([trusted.roleId])); // keeps Trusted at 400 days
+    expect(old.roleIds).toContain(trusted.roleId); // 2000 days → Trusted
+    expect(old.roleIds).not.toContain(member.roleId); // highest_only swaps the lower tier for the higher one
+    expect(t.mod.callsTo('removeRole').map((c) => c.args[1])).toEqual([member.roleId]);
+  });
+
+  it('keeps every earned tier in stack mode', async () => {
+    const { newcomer, member, trusted, old } = setup('stack');
+    await t.services.tiers.syncAll('test', { tenureOnly: true });
+    expect(old.roleIds).toEqual(expect.arrayContaining([newcomer.roleId, member.roleId, trusted.roleId]));
+    expect(t.mod.callsTo('removeRole')).toHaveLength(0);
+  });
+
+  it('leaves demotion grace timers and the regular sync schedule alone', async () => {
+    const { holder } = setup();
+    await t.services.tiers.evaluateMember(holder); // regular evaluation starts the grace timer
+    const before = t.db.select().from(memberTierState).all();
+    expect(before).toHaveLength(1);
+    await t.services.tiers.syncAll('test', { tenureOnly: true });
+    expect(t.db.select().from(memberTierState).all()).toEqual(before);
+    expect(t.services.tiers.lastSync()).toBeNull();
+    expect(t.services.state.get('last_tenure_sync')).toContain('"basis":"tenure"');
+  });
+
+  it('/tiers tenure-sync reports promotions and warns while demotion is on', async () => {
+    setup();
+    const owner = t.guild.addMember({ userId: OWNER_ID });
+    const run = () =>
+      t.executor.run({
+        command: t.services.registry.find('tiers tenure-sync')!,
+        actor: makeActor(owner),
+        source: 'slash',
+        rawInput: {},
+      });
+    const on = await run();
+    // fresh (40d → Member), old (2000d → Trusted) and the owner (2y → Member); holder keeps Trusted.
+    expect(on.result.content).toMatch(/Tenure-only sync of 4 member\(s\): 3 promoted/);
+    expect(on.result.content).toMatch(/Demotion is on/);
+    t.services.settings.update(ADMIN, 'test', (s) => {
+      s.tiers.demotion = false;
+    });
+    expect((await run()).result.content).not.toMatch(/Demotion is on/);
   });
 });

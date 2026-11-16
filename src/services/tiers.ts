@@ -91,6 +91,8 @@ export interface TierCheck {
 export interface SyncSummary {
   at: string;
   reason: string;
+  /** full = tenure and activity; tenure = tenure-only, never demotes. */
+  basis: 'full' | 'tenure';
   members: number;
   changed: number;
   skipped: number;
@@ -355,7 +357,16 @@ export class TierService {
    */
   async evaluateMember(
     member: MemberInfo,
-    opts: { score?: number; reason?: string; manageable?: Set<string> } = {},
+    opts: {
+      score?: number;
+      reason?: string;
+      manageable?: Set<string>;
+      /**
+       * Tenure-only: ignore activity thresholds and never move anyone down. Held tiers are always
+       * kept, and the demotion grace timers are left untouched.
+       */
+      tenureOnly?: boolean;
+    } = {},
   ): Promise<{ added: string[]; removed: string[]; skipped: number }> {
     const list = this.list();
     if (list.length === 0 || this.isExcluded(member)) return { added: [], removed: [], skipped: 0 };
@@ -367,14 +378,16 @@ export class TierService {
       tiers: list,
       roleIds: member.roleIds,
       tenureDays: tenureDays(joinedAt, now.getTime()),
-      score: opts.score ?? this.d.activity.totals(member.userId).score,
+      score: opts.tenureOnly
+        ? Number.POSITIVE_INFINITY
+        : (opts.score ?? this.d.activity.totals(member.userId).score),
       belowSince: this.loadBelowSince(member.userId),
       mode: s.mode,
-      demotion: s.demotion,
+      demotion: opts.tenureOnly ? false : s.demotion,
       graceDays: s.demotionGraceDays,
       now,
     });
-    this.saveBelowSince(member.userId, plan.belowSince);
+    if (!opts.tenureOnly) this.saveBelowSince(member.userId, plan.belowSince);
 
     const manageable =
       opts.manageable ??
@@ -387,8 +400,9 @@ export class TierService {
     const remove = plan.remove.filter((r) => manageable.has(r));
     const skipped = plan.add.length + plan.remove.length - add.length - remove.length;
     // Add before removing so a promoted member is never briefly without a tier role.
-    for (const r of add) await this.d.mod.addRole(member.userId, r, 'Tier sync');
-    for (const r of remove) await this.d.mod.removeRole(member.userId, r, 'Tier sync');
+    const auditReason = opts.tenureOnly ? 'Tier sync (tenure only)' : 'Tier sync';
+    for (const r of add) await this.d.mod.addRole(member.userId, r, auditReason);
+    for (const r of remove) await this.d.mod.removeRole(member.userId, r, auditReason);
     if (add.length || remove.length) {
       await this.d.eventLog.tierChanged({
         userId: member.userId,
@@ -401,7 +415,7 @@ export class TierService {
   }
 
   /** Re-evaluate every member now. */
-  async syncAll(reason: string): Promise<SyncSummary> {
+  async syncAll(reason: string, opts: { tenureOnly?: boolean } = {}): Promise<SyncSummary> {
     if (this.syncing) throw new UserError('A tier sync is already running.');
     this.syncing = true;
     const started = this.now();
@@ -420,7 +434,12 @@ export class TierService {
       for (const m of memberList) {
         count++;
         try {
-          const r = await this.evaluateMember(m, { score: scores.get(m.userId) ?? 0, reason, manageable });
+          const r = await this.evaluateMember(m, {
+            score: scores.get(m.userId) ?? 0,
+            reason,
+            manageable,
+            ...(opts.tenureOnly ? { tenureOnly: true } : {}),
+          });
           if (r.added.length || r.removed.length) changed++;
           skipped += r.skipped;
         } catch (err) {
@@ -434,13 +453,15 @@ export class TierService {
     const summary: SyncSummary = {
       at: new Date(this.now()).toISOString(),
       reason,
+      basis: opts.tenureOnly ? 'tenure' : 'full',
       members: count,
       changed,
       skipped,
       errors,
       durationMs: this.now() - started,
     };
-    this.d.state.set('last_tier_sync', JSON.stringify(summary));
+    // A tenure-only sync is a one-off; it must not postpone the next regular sync.
+    this.d.state.set(opts.tenureOnly ? 'last_tenure_sync' : 'last_tier_sync', JSON.stringify(summary));
     this.d.logger.info(summary, 'Tier sync finished');
     return summary;
   }

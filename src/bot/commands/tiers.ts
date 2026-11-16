@@ -195,6 +195,28 @@ export const tiersCommand = defineTree({
       },
     }),
     defineCommand({
+      name: 'tenure-sync',
+      description: 'Promote members by tenure only (ignores activity, never moves anyone down)',
+      node: 'config:tiers',
+      options: {},
+      async execute(ctx) {
+        const { tiers, settings } = ctx.services;
+        if (tiers.list().length === 0) throw new UserError('No tiers configured.');
+        const s = await tiers.syncAll(`tenure-only sync by ${ctx.actor.displayName}`, { tenureOnly: true });
+        const t = settings.get().tiers;
+        const lines = [
+          `Tenure-only sync of ${s.members} member(s): ${s.changed} promoted${s.skipped ? `, ${s.skipped} role change(s) skipped (hierarchy; see /tiers check)` : ''}${s.errors ? `, ${s.errors} error(s)` : ''}.`,
+          'Activity requirements were ignored and nobody lost a tier they already had.',
+        ];
+        if (t.demotion) {
+          lines.push(
+            `⚠️ Demotion is on: the regular hourly sync still checks activity, so members who don't meet a tier's activity requirement will lose it after the ${t.demotionGraceDays}-day grace period. To keep roles while activity history builds up, run \`/tiers settings demotion:false\`.`,
+          );
+        }
+        return ok(lines.join('\n'));
+      },
+    }),
+    defineCommand({
       name: 'settings',
       description: 'Tier mode, demotion and sync interval',
       node: 'config:tiers',
