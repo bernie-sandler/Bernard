@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-11-16
+
+### Fixed
+
+- Slash commands failing with "The application did not respond" (Discord error 10062, `Unknown interaction`). Commands are now acknowledged as soon as the permission check passes instead of after a 2-second wait, and replies no longer wait for the command log to be posted to its log channel.
+
+### Changed
+
+- When a reply to an interaction fails, the log now includes `ageOnArrivalMs` (how old the interaction was when the bot received it) and `handlingMs` (time spent handling it), to tell network or gateway lag apart from slow commands.
+
 ## [0.1.1] - 2026-11-16
 
 ### Changed
@@ -84,6 +94,7 @@ First release. A self-hosted Discord bot and admin dashboard for one private ser
 - Tag-driven releases: pushing `vX.Y.Z` publishes a multi-arch (amd64/arm64) image to GHCR and creates a GitHub release.
 - Weekly grouped Dependabot updates, with patch and minor updates auto-merged once checks pass.
 
-[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bernie-sandler/bernard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bernie-sandler/bernard/releases/tag/v0.1.0
