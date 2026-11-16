@@ -1,5 +1,5 @@
 services:
-  bernard:
+  Bernard:
     build: .
     image: bernard:latest
     container_name: bernard
