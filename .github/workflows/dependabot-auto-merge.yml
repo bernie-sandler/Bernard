@@ -1,0 +1,40 @@
+name: Dependabot auto-merge
+
+# Queues non-breaking (patch/minor) Dependabot PRs to squash-merge once every required check passes.
+# Major updates are left open for review. Needs "Allow auto-merge" turned on in the repository
+# settings and "CI passed" set as a required check on main; without those this job just labels the PR.
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    name: Auto-merge
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'bernie-sandler/bernard'
+    runs-on: ubuntu-latest
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for patch and minor updates
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch' || steps.meta.outputs.update-type == 'version-update:semver-minor'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          if ! gh pr merge --auto --squash "$PR_URL"; then
+            echo "::warning::Could not enable auto-merge. Turn on 'Allow auto-merge' in the repository settings."
+          fi
+
+      - name: Flag major updates for review
+        if: steps.meta.outputs.update-type == 'version-update:semver-major'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          gh pr comment "$PR_URL" --body "Major version update: review the changelog before merging. Auto-merge is not enabled for this PR."

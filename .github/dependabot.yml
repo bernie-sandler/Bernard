@@ -1,0 +1,46 @@
+version: 2
+
+updates:
+  # pnpm dependencies (Dependabot reads pnpm-lock.yaml through the npm ecosystem).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: deps
+      prefix-development: deps-dev
+    groups:
+      # One PR per week for all non-breaking dev tooling bumps.
+      dev-dependencies:
+        dependency-type: development
+        update-types: [minor, patch]
+      # One PR per week for non-breaking runtime bumps.
+      production-dependencies:
+        dependency-type: production
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: ci
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # Base image in the Dockerfile (node:26-slim).
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: docker
+    ignore:
+      # Stay on the LTS line; move to the next LTS major by hand.
+      - dependency-name: node
+        update-types: [version-update:semver-major]

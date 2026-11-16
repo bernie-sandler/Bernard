@@ -433,6 +433,8 @@ pnpm test:coverage
 
 GitHub Actions run on every pull request to `main` and every push to `main` ([`ci.yml`](.github/workflows/ci.yml)): Biome lint, typecheck, tests with coverage on Node 22 and 26, the production build, and a Docker image build. A final **CI passed** job sums them up. Mark it as the required status check in the `main` branch protection rule so pull requests can only merge when everything is green.
 
+[Dependabot](.github/dependabot.yml) opens weekly PRs (Mondays) for pnpm packages, GitHub Actions and the Docker base image, with minor and patch bumps grouped into one PR per category. [`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) queues patch and minor PRs to squash-merge once **CI passed** is green, and comments on major updates so you review them by hand. Auto-merge needs **Settings → General → Allow auto-merge** turned on.
+
 To release ([`release.yml`](.github/workflows/release.yml)):
 
 1. Bump `version` in `package.json` and merge it to `main`.
