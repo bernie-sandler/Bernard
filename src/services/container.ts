@@ -13,6 +13,7 @@ import { MemberService } from './members.js';
 import { MessageCache } from './messageCache.js';
 import { ModerationService } from './moderation/service.js';
 import { PermissionService } from './permissions/service.js';
+import { SessionService } from './sessions.js';
 import { SettingsService } from './settings.js';
 import { TierService } from './tiers.js';
 import { VoiceService } from './voice.js';
@@ -36,6 +37,7 @@ export interface Services {
   activity: ActivityService;
   tiers: TierService;
   state: BotStateStore;
+  sessions: SessionService;
   registry: CommandRegistry;
 }
 
@@ -48,6 +50,8 @@ export interface ContainerDeps {
   voice: VoicePort;
   bot: BotInfoPort;
   commands: CommandDefinition[];
+  /** Dashboard session lifetime (default 7 days). */
+  sessionTtlMs?: number;
 }
 
 export interface Container {
@@ -79,6 +83,7 @@ export function createContainer(deps: ContainerDeps): Container {
 
   const voice = new VoiceService({ db, guildId, voice: deps.voice, guild, settings, audit, logger });
   const state = new BotStateStore(db, guildId);
+  const sessions = new SessionService(db, guildId, deps.sessionTtlMs ?? 7 * 86_400_000);
   const members = new MemberService(db, guildId, settings);
   // Activity and tiers reference each other (thresholds / crossing callback), so wire them lazily.
   let tiers: TierService | null = null;
@@ -121,6 +126,7 @@ export function createContainer(deps: ContainerDeps): Container {
     activity,
     tiers,
     state,
+    sessions,
     registry,
   };
   return { services, executor: new CommandExecutor(services, logger) };

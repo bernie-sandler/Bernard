@@ -47,6 +47,7 @@ async function main(): Promise<void> {
     voice: new DiscordVoice(client, env.GUILD_ID),
     bot: new DiscordBotInfo(client),
     commands: allCommands,
+    sessionTtlMs: env.SESSION_TTL_HOURS * 3_600_000,
   });
   const state = container.services.state;
 
@@ -68,7 +69,13 @@ async function main(): Promise<void> {
   client.on(Events.Error, (err) => logger.error({ err }, 'Discord client error'));
   client.on(Events.Warn, (msg) => logger.warn({ msg }, 'Discord client warning'));
 
-  const api = await createApiServer({ env, logger, container, startedAt });
+  const api = await createApiServer({
+    env,
+    logger,
+    container,
+    startedAt,
+    jobs: () => scheduler?.status() ?? [],
+  });
   await api.listen({ host: env.HOST, port: env.PORT });
 
   let shuttingDown = false;

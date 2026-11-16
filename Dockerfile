@@ -16,7 +16,7 @@ RUN pnpm install --frozen-lockfile
 # ── Build ──
 FROM deps AS build
 COPY . .
-RUN pnpm build:server
+RUN pnpm build
 RUN pnpm prune --prod --ignore-scripts
 
 # ── Runtime ──

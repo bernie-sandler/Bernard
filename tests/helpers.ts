@@ -89,6 +89,15 @@ export class FakeGuild implements GuildPort {
   async listMembers(): Promise<MemberInfo[]> {
     return [...this.members.values()];
   }
+  cachedMember(userId: string): MemberInfo | null {
+    return this.members.get(userId) ?? null;
+  }
+  listRoles(): RoleInfo[] {
+    return [...this.roles.values()].sort((a, b) => b.position - a.position);
+  }
+  async approximateCounts() {
+    return { members: this.members.size, online: Math.ceil(this.members.size / 2) };
+  }
   roleMemberCount(roleId: string): number {
     return [...this.members.values()].filter((m) => m.roleIds.includes(roleId)).length;
   }

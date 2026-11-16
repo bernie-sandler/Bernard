@@ -22,6 +22,10 @@ const NAME = /^[a-z0-9_-]{1,32}$/;
 /** Nodes that aren't commands but are checked by the dashboard. */
 export const EXTRA_NODES: ExtraNode[] = [
   { node: 'dashboard:access', description: 'Log in to the web dashboard' },
+  {
+    node: 'dashboard:logs',
+    description: 'View stored logs (including deleted message content) in the dashboard',
+  },
 ];
 
 /**

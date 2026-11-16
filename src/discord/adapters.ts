@@ -174,6 +174,36 @@ export class DiscordGuildPort extends GuildBound implements GuildPort {
     return [...members.values()].map(toMemberInfo);
   }
 
+  cachedMember(userId: string): MemberInfo | null {
+    const m = this.guild().members.cache.get(userId);
+    return m ? toMemberInfo(m) : null;
+  }
+
+  listRoles(): RoleInfo[] {
+    return [...this.guild().roles.cache.values()]
+      .filter((r) => r.id !== this.guildId)
+      .sort((a, b) => b.position - a.position)
+      .map((r) => ({ id: r.id, name: r.name, position: r.position, managed: r.managed, color: r.color }));
+  }
+
+  private countsCache: { at: number; value: { members: number; online: number } } | null = null;
+
+  async approximateCounts(): Promise<{ members: number; online: number } | null> {
+    if (this.countsCache && Date.now() - this.countsCache.at < 60_000) return this.countsCache.value;
+    try {
+      // with_counts works without the privileged presence intent.
+      const g = await this.client.guilds.fetch({ guild: this.guildId, withCounts: true, force: true });
+      const value = {
+        members: g.approximateMemberCount ?? g.memberCount,
+        online: g.approximatePresenceCount ?? 0,
+      };
+      this.countsCache = { at: Date.now(), value };
+      return value;
+    } catch {
+      return this.countsCache?.value ?? null;
+    }
+  }
+
   roleMemberCount(roleId: string): number {
     return this.guild().roles.cache.get(roleId)?.members.size ?? 0;
   }

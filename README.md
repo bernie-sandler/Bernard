@@ -2,7 +2,7 @@
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-> **Status: Phase 4 of 7 (Tenure & Activity).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs, tenure tracking with backfill, activity scoring, up to 10 tiers with scheduled sync and demotion, `/rank`, `/userinfo`, `/serverinfo`, `/healthz` and Docker. The web dashboard arrives in phases 5 and 6.
+> **Status: Phase 5 of 7 (Dashboard core).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs, tenure tracking with backfill, activity scoring, up to 10 tiers with scheduled sync and demotion, `/rank`, `/userinfo`, `/serverinfo`, and a web dashboard with Discord login and the Overview, Members, Moderation and Logs pages. The management pages (Command Runner, Permissions, Tiers, Voice Hubs, Settings, Audit Log) arrive in phase 6.
 
 ## Requirements
 
@@ -62,15 +62,17 @@ pnpm dev
 
 The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and migrations run on startup.
 
-| Script                      | What it does                                          |
-| --------------------------- | ----------------------------------------------------- |
-| `pnpm dev`                  | Run with hot reload (tsx)                             |
-| `pnpm build` / `pnpm start` | Compile to `dist/` and run                            |
-| `pnpm test`                 | Unit tests (vitest)                                   |
-| `pnpm typecheck`            | TypeScript, strict                                    |
-| `pnpm lint` / `pnpm format` | Biome                                                 |
-| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts` |
-| `pnpm invite-url`           | Print the bot invite URL and the required permissions |
+| Script                      | What it does                                                 |
+| --------------------------- | ------------------------------------------------------------ |
+| `pnpm dev`                  | Run with hot reload (tsx)                                    |
+| `pnpm dev:web`              | Dashboard dev server with hot reload (port 5173)             |
+| `pnpm build` / `pnpm start` | Compile the server and dashboard to `dist/` and run          |
+| `pnpm demo`                 | Dashboard demo with fake data, no Discord needed (port 3100) |
+| `pnpm test`                 | Unit tests (vitest)                                          |
+| `pnpm typecheck`            | TypeScript, strict                                           |
+| `pnpm lint` / `pnpm format` | Biome                                                        |
+| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts`        |
+| `pnpm invite-url`           | Print the bot invite URL and the required permissions        |
 
 ## Environment variables
 
@@ -255,6 +257,52 @@ You can have up to 10 tiers. Each has a name, a role, a minimum tenure in days a
   - everyone, on demand with `/tiers sync`.
 - Tier changes are posted to the `members` log.
 - **The bot's role must sit above every tier role.** Tier roles it can't manage are skipped and reported by `/tiers check`, `/tiers list` and a warning at startup.
+
+## Web dashboard
+
+The dashboard is served by the same process on `PORT` (default 3000). Members sign in with Discord (`identify` scope only). The bot then checks that they're in the server and that their roles grant `dashboard:access`.
+
+### Setup
+
+1. In the Developer Portal → **OAuth2**, copy the Client Secret into `DISCORD_CLIENT_SECRET`. Then add the redirect `${PUBLIC_BASE_URL}/api/auth/callback`, for example `https://bot.example.com/api/auth/callback`.
+2. Set `SESSION_SECRET` to 32+ random characters (`openssl rand -hex 32`).
+3. Grant access, for example `/permset node:dashboard:access role:@Mod value:true`. The owner, and Administrators while admin bypass is on, always have access.
+
+### What each page needs
+
+| Page                                                   | Node(s)                                                                                                                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overview, Members, member detail                       | `dashboard:access`                                                                                                                                                                     |
+| Member actions (warn, timeout, kick, ban, roles)       | The same node as the slash command: `admin:warn`, `admin:timeout`, `admin:untimeout`, `admin:kick`, `admin:ban`, `admin:role`. Buttons only appear for actions you're allowed to take. |
+| Moderation (all cases) and the history on member pages | `admin:case` (same as `/case`)                                                                                                                                                         |
+| Warning counts                                         | `admin:warnings`                                                                                                                                                                       |
+| Logs                                                   | `dashboard:logs` (deleted message content shows up here, so it has its own node, denied by default)                                                                                    |
+
+Permissions are re-checked on **every request**, so removing someone's role takes effect immediately, without waiting for their session to expire. Dashboard actions call the same services as the slash commands. They create mod cases with `source = dashboard`, and each one is also recorded in the audit log.
+
+### Security
+
+- **Sessions** are stored server-side in SQLite, and only a SHA-256 of the session ID is kept. The cookie is signed, `httpOnly` and `SameSite=Lax`, and `Secure` when `PUBLIC_BASE_URL` is https. Sessions last `SESSION_TTL_HOURS` (default 7 days) and expired ones are cleaned up hourly.
+- **CSRF:** every state-changing request needs the per-session `X-CSRF-Token` header. A request whose `Origin` doesn't match `PUBLIC_BASE_URL` is rejected.
+- **OAuth:** the flow uses a signed, short-lived `state` cookie. The Discord access token is used once to identify the user and then revoked.
+- **Headers:** a strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, and HSTS behind https.
+- **Rate limits:** 300 requests per minute per IP, and 20 per minute on the login endpoints.
+
+### Reverse proxy (Nginx Proxy Manager / Cloudflare)
+
+- Set `PUBLIC_BASE_URL` to the public https URL and `TRUST_PROXY=1` (one proxy hop), or to your proxy's IP or CIDR. Behind Cloudflare plus Nginx Proxy Manager, use `TRUST_PROXY=2`.
+- Proxy everything (`/`, `/api`, `/healthz`) to the container's port 3000. No WebSocket configuration is needed.
+
+### Development
+
+Run the bot and API with `pnpm dev`, and the dashboard with hot reload with `pnpm dev:web`. Open <http://localhost:5173>. Set `PUBLIC_BASE_URL=http://localhost:5173` and add `http://localhost:5173/api/auth/callback` as a redirect in the Developer Portal, so login and the same-origin checks go through Vite's proxy.
+
+To look around without a bot, run `pnpm build:web && pnpm demo` and open <http://localhost:3100>. This runs the real API and dashboard against in-memory fake data, and "Log in with Discord" signs you straight in as the owner.
+
+### Notes
+
+- The **online count** is Discord's approximate presence count. It's fetched without the privileged Presence intent and cached for a minute.
+- The joins and leaves chart uses the stored `members` log, so it covers at most `retentionDays` (30 days).
 
 ## Permissions model
 

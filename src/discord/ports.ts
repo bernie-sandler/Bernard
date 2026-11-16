@@ -86,6 +86,12 @@ export interface GuildPort {
   listMembers(): Promise<MemberInfo[]>;
   /** How many cached members have a role. */
   roleMemberCount(roleId: string): number;
+  /** A member from the local cache only (no API call); null when not cached. */
+  cachedMember(userId: string): MemberInfo | null;
+  /** All roles, highest first (excluding @everyone). */
+  listRoles(): RoleInfo[];
+  /** Discord's approximate member and online counts (cached briefly). */
+  approximateCounts(): Promise<{ members: number; online: number } | null>;
 }
 
 export interface MessageSummary {
