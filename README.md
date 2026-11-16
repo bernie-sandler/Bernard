@@ -125,6 +125,8 @@ See [.env.example](.env.example) for the full annotated list. The app validates 
 | `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                         |
 | `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                         |
 | `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                          |
+| `PUID` / `PGID`            | no           | `1000` / `1000`         | Docker only: user and group that run the app and own `/data` |
+| `UMASK`                    | no           | `0022`                  | Docker only: file-creation mask         |
 
 ## Deploying with Docker
 
@@ -137,6 +139,8 @@ docker compose up -d --build
 ```
 
 The SQLite database lives in the `bernard-data` volume at `/data/bernard.db`. Health check: `GET /healthz`.
+
+The container starts as root only long enough to give `PUID:PGID` (default `1000:1000`) ownership of `/data`, then runs the app as that user with `UMASK`. On a bind mount, set them to the owner you want on the host, for example `PUID=99` and `PGID=100` on Unraid. Starting the container with `--user` skips this and runs as that user, so `/data` must already be writable by it.
 
 Behind Nginx Proxy Manager or Cloudflare, set `PUBLIC_BASE_URL` to the public https URL and `TRUST_PROXY` to your proxy (for example `TRUST_PROXY=1`).
 
