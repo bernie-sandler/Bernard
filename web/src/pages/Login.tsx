@@ -14,7 +14,7 @@ export function LoginPage() {
   return (
     <div className="flex min-h-full items-center justify-center p-6">
       <div className="w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900/70 p-8 text-center shadow-xl">
-        <img src="/favicon.svg" alt="" className="mx-auto size-14" />
+        <img src="/logo-256.png" alt="Bernard" width={128} height={128} className="mx-auto size-32" />
         <h1 className="mt-4 text-xl font-semibold text-slate-50">Bernard dashboard</h1>
         <p className="mt-1 text-sm text-slate-400">Sign in with the Discord account you use on the server.</p>
         {error && (

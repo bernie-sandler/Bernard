@@ -24,7 +24,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
     "invite-url": "tsx --env-file-if-exists=.env scripts/invite-url.ts",
-    "demo": "tsx scripts/demo.ts"
+    "demo": "tsx scripts/demo.ts",
+    "icons": "tsx scripts/build-icons.ts"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

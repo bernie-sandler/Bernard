@@ -92,18 +92,19 @@ pnpm dev
 
 The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and migrations run on startup.
 
-| Script                      | What it does                                                 |
-| --------------------------- | ------------------------------------------------------------ |
-| `pnpm dev`                  | Run with hot reload (tsx)                                    |
-| `pnpm dev:web`              | Dashboard dev server with hot reload (port 5173)             |
-| `pnpm build` / `pnpm start` | Compile the server and dashboard to `dist/` and run          |
-| `pnpm demo`                 | Dashboard demo with fake data, no Discord needed (port 3100) |
-| `pnpm test`                 | Unit tests (vitest)                                          |
-| `pnpm test:coverage`        | Tests with a coverage report (`coverage/index.html`)         |
-| `pnpm typecheck`            | TypeScript, strict                                           |
-| `pnpm lint` / `pnpm format` | Biome                                                        |
-| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts`        |
-| `pnpm invite-url`           | Print the bot invite URL and the required permissions        |
+| Script                      | What it does                                                                |
+| --------------------------- | --------------------------------------------------------------------------- |
+| `pnpm dev`                  | Run with hot reload (tsx)                                                   |
+| `pnpm dev:web`              | Dashboard dev server with hot reload (port 5173)                            |
+| `pnpm build` / `pnpm start` | Compile the server and dashboard to `dist/` and run                         |
+| `pnpm demo`                 | Dashboard demo with fake data, no Discord needed (port 3100)                |
+| `pnpm icons`                | Rebuild the dashboard favicons and login logo from `shared/assets/logo.png` |
+| `pnpm test`                 | Unit tests (vitest)                                                         |
+| `pnpm test:coverage`        | Tests with a coverage report (`coverage/index.html`)                        |
+| `pnpm typecheck`            | TypeScript, strict                                                          |
+| `pnpm lint` / `pnpm format` | Biome                                                                       |
+| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts`                       |
+| `pnpm invite-url`           | Print the bot invite URL and the required permissions                       |
 
 ## Environment variables
 
