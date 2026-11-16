@@ -110,23 +110,23 @@ The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and mig
 
 See [.env.example](.env.example) for the full annotated list. The app validates everything with zod at startup and exits with a list of every problem if something is wrong.
 
-| Variable                   | Required     | Default                 | Notes                                   |
-| -------------------------- | ------------ | ----------------------- | --------------------------------------- |
-| `DISCORD_TOKEN`            | yes          |                         | Bot token                               |
-| `DISCORD_CLIENT_ID`        | yes          |                         | Application ID                          |
-| `GUILD_ID`                 | yes          |                         | The one server this bot serves          |
-| `DASHBOARD_ENABLED`        | no           | `true`                  |                                         |
-| `DISCORD_CLIENT_SECRET`    | if dashboard |                         | OAuth2 client secret                    |
-| `SESSION_SECRET`           | if dashboard |                         | 32+ random characters                   |
-| `PUBLIC_BASE_URL`          | no           | `http://localhost:3000` | Used for the OAuth redirect             |
-| `TRUST_PROXY`              | no           | `false`                 | `true`, a hop count, or proxy IPs/CIDRs |
-| `SESSION_TTL_HOURS`        | no           | `168`                   |                                         |
-| `COOKIE_SECURE`            | no           | auto                    | `true` when the base URL is https       |
-| `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                         |
-| `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                         |
-| `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                          |
+| Variable                   | Required     | Default                 | Notes                                                        |
+| -------------------------- | ------------ | ----------------------- | ------------------------------------------------------------ |
+| `DISCORD_TOKEN`            | yes          |                         | Bot token                                                    |
+| `DISCORD_CLIENT_ID`        | yes          |                         | Application ID                                               |
+| `GUILD_ID`                 | yes          |                         | The one server this bot serves                               |
+| `DASHBOARD_ENABLED`        | no           | `true`                  |                                                              |
+| `DISCORD_CLIENT_SECRET`    | if dashboard |                         | OAuth2 client secret                                         |
+| `SESSION_SECRET`           | if dashboard |                         | 32+ random characters                                        |
+| `PUBLIC_BASE_URL`          | no           | `http://localhost:3000` | Used for the OAuth redirect                                  |
+| `TRUST_PROXY`              | no           | `false`                 | `true`, a hop count, or proxy IPs/CIDRs                      |
+| `SESSION_TTL_HOURS`        | no           | `168`                   |                                                              |
+| `COOKIE_SECURE`            | no           | auto                    | `true` when the base URL is https                            |
+| `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                                              |
+| `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                                              |
+| `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                                               |
 | `PUID` / `PGID`            | no           | `1000` / `1000`         | Docker only: user and group that run the app and own `/data` |
-| `UMASK`                    | no           | `0022`                  | Docker only: file-creation mask         |
+| `UMASK`                    | no           | `0022`                  | Docker only: file-creation mask                              |
 
 ## Deploying with Docker
 
@@ -428,6 +428,25 @@ pnpm test:coverage
   - the job scheduler.
 - `pnpm test:coverage` measures our own code and leaves out thin discord.js glue (adapters, gateway event handlers, startup wiring), which only a live gateway can exercise. An HTML report is written to `coverage/`.
 - `pnpm demo` serves the real dashboard and API on fake data for hands-on checks.
+
+## CI and releases
+
+GitHub Actions run on every pull request to `main` and every push to `main` ([`ci.yml`](.github/workflows/ci.yml)): Biome lint, typecheck, tests with coverage on Node 22 and 26, the production build, and a Docker image build. A final **CI passed** job sums them up. Mark it as the required status check in the `main` branch protection rule so pull requests can only merge when everything is green.
+
+To release ([`release.yml`](.github/workflows/release.yml)):
+
+1. Bump `version` in `package.json` and merge it to `main`.
+2. Tag that commit and push the tag:
+
+   ```bash
+   git tag v0.2.0
+   ```
+
+   ```bash
+   git push origin v0.2.0
+   ```
+
+The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release with generated notes. A tag with a suffix, like `v0.2.0-rc.1`, becomes a prerelease and leaves `latest` alone.
 
 ## Troubleshooting
 
