@@ -29,7 +29,8 @@ export class LogService {
     private readonly logger: Logger,
   ) {}
 
-  async record(entry: LogEntryInput): Promise<void> {
+  /** Store the entry and post it. Resolves with the posted message ID (null if not posted). */
+  async record(entry: LogEntryInput): Promise<{ messageId: string | null }> {
     const createdAt = new Date();
     try {
       this.db
@@ -54,7 +55,7 @@ export class LogService {
     }
 
     const channelId = this.settings.get().logs.channels[entry.type];
-    if (!channelId) return;
+    if (!channelId) return { messageId: null };
     const embed: ResultEmbed = {
       color: COLORS.neutral,
       description: entry.summary,
@@ -63,9 +64,10 @@ export class LogService {
       footer: entry.embed?.footer ?? idFooter(entry),
     };
     try {
-      await this.messenger.sendEmbed(channelId, embed);
+      return { messageId: await this.messenger.sendEmbed(channelId, embed) };
     } catch (err) {
       this.logger.warn({ err, channelId, type: entry.type }, 'Failed to post log entry to channel');
+      return { messageId: null };
     }
   }
 

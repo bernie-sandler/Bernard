@@ -115,6 +115,16 @@ function make<K extends OptionDescriptor['kind']>(kind: K) {
     };
 }
 
+/** Channel options also track whether they default to the current channel (which makes them required input). */
+function channelBuilder<R extends boolean = false, C extends 'current' | undefined = undefined>(
+  params: Omit<ChannelOpt, 'kind' | 'required' | 'contextDefault'> & { required?: R; contextDefault?: C },
+): ChannelOpt & { required: NoInfer<R>; contextDefault: NoInfer<C> } {
+  return { ...params, kind: 'channel', required: (params.required ?? false) as R } as ChannelOpt & {
+    required: R;
+    contextDefault: C;
+  };
+}
+
 export const opt = {
   string: make('string'),
   integer: make('integer'),
@@ -122,7 +132,7 @@ export const opt = {
   boolean: make('boolean'),
   user: make('user'),
   role: make('role'),
-  channel: make('channel'),
+  channel: channelBuilder,
   duration: make('duration'),
 };
 

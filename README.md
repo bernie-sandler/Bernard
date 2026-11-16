@@ -2,7 +2,7 @@
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-> **Status: Phase 1 of 7 (Foundation).** Working now: config validation, the database and migrations, slash command registration, the custom permission system (`/permset`, `/permunset`, `/permlist`, `/permcheck`), `/help`, `/ping`, the `commands` log, `/healthz` and Docker. Moderation, logs, voice, tiers and the dashboard arrive in later phases.
+> **Status: Phase 2 of 7 (Moderation & Logs).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), `/userinfo`, `/serverinfo`, `/healthz` and Docker. Voice hubs, tiers and the dashboard arrive in later phases.
 
 ## Requirements
 
@@ -23,6 +23,7 @@ A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, 
    - Under **Redirects**, add `${PUBLIC_BASE_URL}/api/auth/callback`, for example `https://bot.example.com/api/auth/callback`. It must match exactly.
 5. In Discord, enable **Settings → Advanced → Developer Mode**. Then right-click your server, choose **Copy Server ID** and put it in `GUILD_ID`.
 6. Generate the invite link and open it:
+
    ```bash
    pnpm invite-url
    ```
@@ -30,14 +31,14 @@ A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, 
 
 ### Intents used
 
-| Intent | Privileged | Why |
-|---|---|---|
-| Guilds | no | Channels, roles, guild info |
-| GuildMembers | **yes** | Joins/leaves, tenure backfill, permission role lookups |
-| GuildMessages | no | Message logs, activity points |
-| MessageContent | **yes** | Edit/delete log content |
-| GuildVoiceStates | no | Voice logs, join-to-create, voice activity |
-| GuildModeration | no | Ban events, audit log entries |
+| Intent           | Privileged | Why                                                    |
+| ---------------- | ---------- | ------------------------------------------------------ |
+| Guilds           | no         | Channels, roles, guild info                            |
+| GuildMembers     | **yes**    | Joins/leaves, tenure backfill, permission role lookups |
+| GuildMessages    | no         | Message logs, activity points                          |
+| MessageContent   | **yes**    | Edit/delete log content                                |
+| GuildVoiceStates | no         | Voice logs, join-to-create, voice activity             |
+| GuildModeration  | no         | Ban events, audit log entries                          |
 
 ### Bot permissions
 
@@ -61,35 +62,35 @@ pnpm dev
 
 The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and migrations run on startup.
 
-| Script | What it does |
-|---|---|
-| `pnpm dev` | Run with hot reload (tsx) |
-| `pnpm build` / `pnpm start` | Compile to `dist/` and run |
-| `pnpm test` | Unit tests (vitest) |
-| `pnpm typecheck` | TypeScript, strict |
-| `pnpm lint` / `pnpm format` | Biome |
-| `pnpm db:generate` | Generate a migration after editing `src/db/schema.ts` |
-| `pnpm invite-url` | Print the bot invite URL and the required permissions |
+| Script                      | What it does                                          |
+| --------------------------- | ----------------------------------------------------- |
+| `pnpm dev`                  | Run with hot reload (tsx)                             |
+| `pnpm build` / `pnpm start` | Compile to `dist/` and run                            |
+| `pnpm test`                 | Unit tests (vitest)                                   |
+| `pnpm typecheck`            | TypeScript, strict                                    |
+| `pnpm lint` / `pnpm format` | Biome                                                 |
+| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts` |
+| `pnpm invite-url`           | Print the bot invite URL and the required permissions |
 
 ## Environment variables
 
 See [.env.example](.env.example) for the full annotated list. The app validates everything with zod at startup and exits with a list of every problem if something is wrong.
 
-| Variable | Required | Default | Notes |
-|---|---|---|---|
-| `DISCORD_TOKEN` | yes | | Bot token |
-| `DISCORD_CLIENT_ID` | yes | | Application ID |
-| `GUILD_ID` | yes | | The one server this bot serves |
-| `DASHBOARD_ENABLED` | no | `true` | |
-| `DISCORD_CLIENT_SECRET` | if dashboard | | OAuth2 client secret |
-| `SESSION_SECRET` | if dashboard | | 32+ random characters |
-| `PUBLIC_BASE_URL` | no | `http://localhost:3000` | Used for the OAuth redirect |
-| `TRUST_PROXY` | no | `false` | `true`, a hop count, or proxy IPs/CIDRs |
-| `SESSION_TTL_HOURS` | no | `168` | |
-| `COOKIE_SECURE` | no | auto | `true` when the base URL is https |
-| `DATABASE_PATH` | no | `/data/bernard.db` | |
-| `HOST` / `PORT` | no | `0.0.0.0` / `3000` | |
-| `LOG_LEVEL` / `LOG_PRETTY` | no | `info` / `false` | pino JSON logs |
+| Variable                   | Required     | Default                 | Notes                                   |
+| -------------------------- | ------------ | ----------------------- | --------------------------------------- |
+| `DISCORD_TOKEN`            | yes          |                         | Bot token                               |
+| `DISCORD_CLIENT_ID`        | yes          |                         | Application ID                          |
+| `GUILD_ID`                 | yes          |                         | The one server this bot serves          |
+| `DASHBOARD_ENABLED`        | no           | `true`                  |                                         |
+| `DISCORD_CLIENT_SECRET`    | if dashboard |                         | OAuth2 client secret                    |
+| `SESSION_SECRET`           | if dashboard |                         | 32+ random characters                   |
+| `PUBLIC_BASE_URL`          | no           | `http://localhost:3000` | Used for the OAuth redirect             |
+| `TRUST_PROXY`              | no           | `false`                 | `true`, a hop count, or proxy IPs/CIDRs |
+| `SESSION_TTL_HOURS`        | no           | `168`                   |                                         |
+| `COOKIE_SECURE`            | no           | auto                    | `true` when the base URL is https       |
+| `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                         |
+| `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                         |
+| `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                          |
 
 ## Deploying with Docker
 
@@ -119,6 +120,52 @@ docker compose cp bernard:/data/backup.db ./bernard-backup.db
 
 To restore: stop the container, copy the file back to `/data/bernard.db`, and start it again.
 
+## Commands
+
+| Command | Node | Notes |
+|---|---|---|
+| `/help`, `/ping`, `/userinfo [user]`, `/serverinfo` | `public:*` | Open to everyone by default. `/help` lists only commands you can use. |
+| `/permset`, `/permunset`, `/permlist`, `/permcheck` | `config:perm*` | Manage the permission rules. |
+| `/ban user [reason] [duration] [delete_days]` | `admin:ban` | With `duration` (e.g. `7d`, max 365d) it's a temporary ban, lifted automatically. |
+| `/unban`, `/kick` | `admin:unban`, `admin:kick` | |
+| `/timeout user duration [reason]`, `/untimeout` | `admin:timeout`, `admin:untimeout` | Max 28 days (a Discord limit). Members with Administrator can't be timed out. |
+| `/warn user reason` | `admin:warn` | |
+| `/warnings list user`, `/warnings remove case` | `admin:warnings` | Removing a warning keeps it in history and marks it removed. |
+| `/purge amount [user] [channel]` | `admin:purge` | 1-100 messages. With `user` it scans up to 500 recent messages. Skips pinned messages and anything older than 14 days, and reports both. |
+| `/slowmode seconds [channel]` | `admin:slowmode` | 0 turns it off. |
+| `/lock [channel]`, `/unlock [channel]` | `admin:lock`, `admin:unlock` | Lock denies sending for @everyone. Unlock restores the previous overwrite. |
+| `/role add`, `/role remove` | `admin:role` | Refuses roles at or above the bot's or your highest role, plus managed roles. |
+| `/nick user [nickname]` | `admin:nick` | Leave `nickname` empty to reset it. |
+| `/announce channel message [embed] [title]` | `admin:announce` | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does. |
+| `/case id` | `admin:case` | |
+| `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs` | |
+
+Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlock`) require a channel when run from the dashboard.
+
+### Moderation behaviour
+
+- Every action creates a numbered **mod case** with its source (`slash`, `dashboard`, `discord` or `system`) and posts it to the `moderation` log.
+- **Hierarchy checks:** you can't act on yourself, the owner, the bot, or anyone whose highest role is at or above yours. The bot can't act on anyone at or above its own highest role either.
+- **DMs:** the target gets a DM before a ban or kick, and after a timeout or warning. Turn this off with the `moderation.dmOnAction` setting. The bot's reply says when a DM couldn't be delivered.
+- **Discord's audit log** shows the real moderator, because the bot puts `(by Name [id])` in the reason.
+- **Actions done in Discord's own UI** (ban, unban, kick, timeout) are picked up from the audit log and recorded as cases with source `discord`. This needs the View Audit Log permission.
+
+## Logs
+
+| Type | Events |
+|---|---|
+| `moderation` | Every mod case, warning removals |
+| `members` | Joins (with account age and a new-account warning), leaves, nickname changes |
+| `messages` | Edits (before/after), deletes (content, attachment names), bulk deletes |
+| `voice` | Joins, leaves and moves |
+| `server` | Role and channel create/delete/update, member role changes |
+| `commands` | Every command use: who, what, arguments, allowed/denied, slash or dashboard |
+
+- `/logs set` posts a test message first and refuses channels the bot can't write to.
+- Entries are always **stored in the database**, even for types not routed to a channel, so the dashboard can search them. Stored entries are pruned after `retentionDays` (default 30), checked daily at 03:30 and at startup.
+- Message content for edit/delete logs comes from a **bounded in-memory cache** (default 5000 messages, set with `/logs config cache_size`). Edits and deletes of messages sent before the bot started, or already evicted, are logged as "not cached". Discord doesn't report who deleted a message, so delete logs don't include that.
+- Events in log channels themselves are ignored, and bot messages aren't logged.
+
 ## Permissions model
 
 Nodes look like `category:command` (for example `admin:ban`), with wildcards `category:*` and `*`. Categories: `admin`, `config`, `public`, `voice`, `dashboard`.
@@ -142,6 +189,7 @@ Slash commands register without `default_member_permissions`, so Discord shows e
 ## Adding a command
 
 1. Create or extend a file in `src/bot/commands/`:
+
    ```ts
    export const hello = defineCommand({
      name: 'hello',

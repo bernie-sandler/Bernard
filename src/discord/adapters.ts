@@ -1,6 +1,28 @@
-import { type Client, EmbedBuilder, type Guild, type GuildMember, PermissionFlagsBits } from 'discord.js';
+import {
+  type Channel,
+  ChannelType,
+  type Client,
+  EmbedBuilder,
+  type Guild,
+  type GuildMember,
+  PermissionFlagsBits,
+  type PermissionsString,
+} from 'discord.js';
 import type { ResultEmbed } from '../shared/commandResult.js';
-import type { BotInfoPort, GuildPort, MemberInfo, MessengerPort, RoleInfo } from './ports.js';
+import type {
+  BotInfoPort,
+  ChannelInfo,
+  ChannelKindName,
+  GuildPort,
+  GuildSummary,
+  LockState,
+  MemberInfo,
+  MessageSummary,
+  MessengerPort,
+  ModerationPort,
+  RoleInfo,
+  UserInfo,
+} from './ports.js';
 
 export function toMemberInfo(member: GuildMember): MemberInfo {
   return {
@@ -14,7 +36,33 @@ export function toMemberInfo(member: GuildMember): MemberInfo {
     isAdministrator: member.permissions.has(PermissionFlagsBits.Administrator),
     highestRolePosition: member.roles.highest.position,
     joinedAt: member.joinedAt,
+    createdAt: member.user.createdAt,
+    communicationDisabledUntil: member.isCommunicationDisabled() ? member.communicationDisabledUntil : null,
+    nickname: member.nickname,
   };
+}
+
+export function channelKind(c: Channel): ChannelKindName {
+  switch (c.type) {
+    case ChannelType.GuildText:
+      return 'text';
+    case ChannelType.GuildVoice:
+      return 'voice';
+    case ChannelType.GuildCategory:
+      return 'category';
+    case ChannelType.GuildAnnouncement:
+      return 'announcement';
+    case ChannelType.GuildStageVoice:
+      return 'stage';
+    case ChannelType.GuildForum:
+      return 'forum';
+    case ChannelType.PublicThread:
+    case ChannelType.PrivateThread:
+    case ChannelType.AnnouncementThread:
+      return 'thread';
+    default:
+      return 'other';
+  }
 }
 
 export function toEmbed(e: ResultEmbed): EmbedBuilder {
@@ -37,13 +85,10 @@ export function toEmbed(e: ResultEmbed): EmbedBuilder {
   return b;
 }
 
-/**
- * GuildPort backed by a discord.js Client. The guild is looked up lazily so the adapter can be
- * built before the client is ready.
- */
-export class DiscordGuildPort implements GuildPort {
+/** Shared lazy guild lookup so adapters can be built before the client is ready. */
+abstract class GuildBound {
   constructor(
-    private readonly client: Client,
+    protected readonly client: Client,
     readonly guildId: string,
   ) {}
 
@@ -52,15 +97,55 @@ export class DiscordGuildPort implements GuildPort {
     if (!g) throw new Error(`Bot is not in guild ${this.guildId}`);
     return g;
   }
+}
 
+export class DiscordGuildPort extends GuildBound implements GuildPort {
   ownerId(): string {
     return this.guild().ownerId;
   }
 
+  summary(): GuildSummary {
+    const g = this.guild();
+    const counts = { text: 0, voice: 0, category: 0, other: 0 };
+    for (const c of g.channels.cache.values()) {
+      const k = channelKind(c);
+      if (k === 'text' || k === 'announcement' || k === 'forum') counts.text++;
+      else if (k === 'voice' || k === 'stage') counts.voice++;
+      else if (k === 'category') counts.category++;
+      else counts.other++;
+    }
+    return {
+      id: g.id,
+      name: g.name,
+      ownerId: g.ownerId,
+      iconUrl: g.iconURL({ size: 256 }),
+      createdAt: g.createdAt,
+      memberCount: g.memberCount,
+      roleCount: g.roles.cache.size,
+      channelCounts: counts,
+      boostTier: g.premiumTier,
+      boostCount: g.premiumSubscriptionCount ?? 0,
+    };
+  }
+
   async getMember(userId: string): Promise<MemberInfo | null> {
     try {
-      const m = await this.guild().members.fetch(userId);
-      return toMemberInfo(m);
+      return toMemberInfo(await this.guild().members.fetch(userId));
+    } catch {
+      return null;
+    }
+  }
+
+  async getUser(userId: string): Promise<UserInfo | null> {
+    try {
+      const u = await this.client.users.fetch(userId);
+      return {
+        userId: u.id,
+        username: u.username,
+        avatarUrl: u.displayAvatarURL({ size: 128 }),
+        isBot: u.bot,
+        createdAt: u.createdAt,
+      };
     } catch {
       return null;
     }
@@ -72,10 +157,151 @@ export class DiscordGuildPort implements GuildPort {
     return { id: r.id, name: r.name, position: r.position, managed: r.managed, color: r.color };
   }
 
+  getChannel(channelId: string): ChannelInfo | null {
+    const c = this.guild().channels.cache.get(channelId);
+    if (!c) return null;
+    return { id: c.id, name: c.name, kind: channelKind(c), parentId: c.parentId };
+  }
+
   roleName(roleId: string): string {
     if (roleId === this.guildId) return '@everyone';
     const r = this.client.guilds.cache.get(this.guildId)?.roles.cache.get(roleId);
     return r ? `@${r.name}` : `<@&${roleId}>`;
+  }
+
+  botMember(): { userId: string; highestRolePosition: number } {
+    const me = this.guild().members.me;
+    if (!me) throw new Error('Bot member not cached');
+    return { userId: me.id, highestRolePosition: me.roles.highest.position };
+  }
+}
+
+const LOCK_PERMS: PermissionsString[] = [
+  'SendMessages',
+  'SendMessagesInThreads',
+  'CreatePublicThreads',
+  'CreatePrivateThreads',
+];
+
+export class DiscordModeration extends GuildBound implements ModerationPort {
+  async ban(userId: string, opts: { reason?: string; deleteMessageSeconds?: number }): Promise<void> {
+    await this.guild().bans.create(userId, {
+      ...(opts.reason ? { reason: opts.reason } : {}),
+      ...(opts.deleteMessageSeconds ? { deleteMessageSeconds: opts.deleteMessageSeconds } : {}),
+    });
+  }
+
+  async unban(userId: string, reason?: string): Promise<void> {
+    await this.guild().bans.remove(userId, reason);
+  }
+
+  async isBanned(userId: string): Promise<boolean> {
+    try {
+      await this.guild().bans.fetch({ user: userId, force: true });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async kick(userId: string, reason?: string): Promise<void> {
+    await this.guild().members.kick(userId, reason);
+  }
+
+  async timeout(userId: string, ms: number | null, reason?: string): Promise<void> {
+    const member = await this.guild().members.fetch(userId);
+    await member.timeout(ms, reason);
+  }
+
+  async setNickname(userId: string, nickname: string | null, reason?: string): Promise<void> {
+    const member = await this.guild().members.fetch(userId);
+    await member.setNickname(nickname, reason);
+  }
+
+  async addRole(userId: string, roleId: string, reason?: string): Promise<void> {
+    await this.guild().members.addRole({ user: userId, role: roleId, ...(reason ? { reason } : {}) });
+  }
+
+  async removeRole(userId: string, roleId: string, reason?: string): Promise<void> {
+    await this.guild().members.removeRole({ user: userId, role: roleId, ...(reason ? { reason } : {}) });
+  }
+
+  private async textChannel(channelId: string) {
+    const c = await this.guild().channels.fetch(channelId);
+    if (!c || !c.isTextBased()) throw new Error(`Channel ${channelId} is not a text channel`);
+    return c;
+  }
+
+  async fetchMessages(channelId: string, limit: number, before?: string): Promise<MessageSummary[]> {
+    const c = await this.textChannel(channelId);
+    const msgs = await c.messages.fetch({ limit: Math.min(limit, 100), ...(before ? { before } : {}) });
+    return [...msgs.values()]
+      .sort((a, b) => b.createdTimestamp - a.createdTimestamp)
+      .map((m) => ({ id: m.id, authorId: m.author.id, createdAt: m.createdAt, pinned: m.pinned }));
+  }
+
+  async deleteMessages(channelId: string, ids: string[], reason?: string): Promise<number> {
+    const c = await this.textChannel(channelId);
+    if (ids.length === 0) return 0;
+    if (ids.length === 1) {
+      await c.messages.delete(ids[0]!);
+      return 1;
+    }
+    if (!('bulkDelete' in c)) throw new Error('Channel does not support bulk delete');
+    let deleted = 0;
+    for (let i = 0; i < ids.length; i += 100) {
+      const res = await c.bulkDelete(ids.slice(i, i + 100), true);
+      deleted += res.size;
+    }
+    void reason; // bulk delete has no audit-log reason
+    return deleted;
+  }
+
+  async setSlowmode(channelId: string, seconds: number, reason?: string): Promise<void> {
+    const c = await this.guild().channels.fetch(channelId);
+    if (!c || !('setRateLimitPerUser' in c)) throw new Error('That channel does not support slowmode');
+    await c.setRateLimitPerUser(seconds, reason);
+  }
+
+  async setLocked(
+    channelId: string,
+    locked: boolean,
+    previous?: LockState,
+    reason?: string,
+  ): Promise<LockState> {
+    const c = await this.guild().channels.fetch(channelId);
+    if (!c || !('permissionOverwrites' in c)) throw new Error('That channel cannot be locked');
+    const everyone = this.guildId;
+    const current = c.permissionOverwrites.cache.get(everyone);
+    const state: LockState = {};
+    for (const p of LOCK_PERMS) {
+      state[p] = current?.allow.has(p) ? true : current?.deny.has(p) ? false : null;
+    }
+    const next: Partial<Record<PermissionsString, boolean | null>> = {};
+    for (const p of LOCK_PERMS) next[p] = locked ? false : (previous?.[p] ?? null);
+    await c.permissionOverwrites.edit(everyone, next, reason ? { reason } : {});
+    return state;
+  }
+
+  async sendMessage(channelId: string, msg: { content?: string; embed?: ResultEmbed }): Promise<string> {
+    const c = await this.guild().channels.fetch(channelId);
+    if (!c || !c.isSendable()) throw new Error('I cannot send messages in that channel');
+    const sent = await c.send({
+      ...(msg.content ? { content: msg.content } : {}),
+      ...(msg.embed ? { embeds: [toEmbed(msg.embed)] } : {}),
+      allowedMentions: { parse: ['users', 'roles'] },
+    });
+    return sent.id;
+  }
+
+  async dm(userId: string, text: string): Promise<boolean> {
+    try {
+      const user = await this.client.users.fetch(userId);
+      await user.send({ content: text.slice(0, 2000), allowedMentions: { parse: [] } });
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
@@ -100,5 +326,8 @@ export class DiscordBotInfo implements BotInfoPort {
   }
   uptimeMs(): number {
     return this.client.uptime ?? 0;
+  }
+  userId(): string | null {
+    return this.client.user?.id ?? null;
   }
 }

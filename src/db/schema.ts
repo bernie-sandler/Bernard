@@ -46,32 +46,38 @@ export const permissionRules = sqliteTable(
 
 // ── Moderation ──────────────────────────────────────────────────────────────
 
+export const MOD_ACTIONS = [
+  'ban',
+  'unban',
+  'kick',
+  'timeout',
+  'untimeout',
+  'warn',
+  'purge',
+  'role_add',
+  'role_remove',
+  'nick',
+  'slowmode',
+  'lock',
+  'unlock',
+] as const;
+export type ModAction = (typeof MOD_ACTIONS)[number];
+export const MOD_SOURCES = ['slash', 'dashboard', 'discord', 'system'] as const;
+export type ModSource = (typeof MOD_SOURCES)[number];
+
 export const modCases = sqliteTable(
   'mod_cases',
   {
     id: integer('id').primaryKey({ autoIncrement: true }),
     guildId: text('guild_id').notNull(),
     caseNumber: integer('case_number').notNull(),
-    action: text('action', {
-      enum: [
-        'ban',
-        'unban',
-        'kick',
-        'timeout',
-        'untimeout',
-        'warn',
-        'purge',
-        'role_add',
-        'role_remove',
-        'nick',
-      ],
-    }).notNull(),
+    action: text('action', { enum: MOD_ACTIONS }).notNull(),
     targetId: text('target_id').notNull(),
     moderatorId: text('moderator_id').notNull(),
     reason: text('reason'),
     durationMs: integer('duration_ms'),
     expiresAt: integer('expires_at', { mode: 'timestamp_ms' }),
-    source: text('source', { enum: ['slash', 'dashboard', 'discord', 'system'] }).notNull(),
+    source: text('source', { enum: MOD_SOURCES }).notNull(),
     /** Warnings can be removed (active=false) without deleting history. */
     active: integer('active', { mode: 'boolean' }).notNull().default(true),
     data: text('data', { mode: 'json' }).$type<Record<string, unknown>>(),

@@ -37,6 +37,13 @@ export const settingsSchema = z.object({
     })
     .prefault({}),
 
+  moderation: z
+    .object({
+      /** DM members when they are warned, timed out, kicked or banned (best-effort). */
+      dmOnAction: z.boolean().default(true),
+    })
+    .prefault({}),
+
   voice: z
     .object({
       graceSeconds: z.number().int().min(0).max(300).default(10),

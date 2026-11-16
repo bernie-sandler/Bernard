@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials } from 'discord.js';
+import { Client, GatewayIntentBits, Options, Partials } from 'discord.js';
 
 /**
  * Intents:
@@ -19,5 +19,7 @@ export function createDiscordClient(): Client {
     ],
     partials: [Partials.Message, Partials.Channel, Partials.GuildMember],
     allowedMentions: { parse: [] },
+    // Our own bounded MessageCache holds content for logs; keep discord.js's per-channel cache small.
+    makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 50 }),
   });
 }

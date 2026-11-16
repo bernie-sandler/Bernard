@@ -55,7 +55,20 @@ export class CommandExecutor {
     }
     req.onAllowed?.();
 
-    const parsed = command.schema.safeParse(req.rawInput);
+    // Options like purge's channel default to the channel the slash command was used in.
+    const rawInput = { ...req.rawInput };
+    if (req.channelId) {
+      for (const [name, d] of Object.entries(leaf.options)) {
+        if (
+          d.kind === 'channel' &&
+          d.contextDefault === 'current' &&
+          (rawInput[name] === undefined || rawInput[name] === null)
+        ) {
+          rawInput[name] = req.channelId;
+        }
+      }
+    }
+    const parsed = command.schema.safeParse(rawInput);
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => `• \`${i.path.join('.') || 'input'}\`: ${i.message}`);
       return this.finish(req, 'invalid', {

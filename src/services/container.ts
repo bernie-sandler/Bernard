@@ -1,11 +1,14 @@
 import type { Db } from '../db/client.js';
-import type { BotInfoPort, GuildPort, MessengerPort } from '../discord/ports.js';
+import type { BotInfoPort, GuildPort, MessengerPort, ModerationPort } from '../discord/ports.js';
 import type { Logger } from '../logger.js';
 import { AuditService } from './audit.js';
 import { CommandExecutor } from './commands/executor.js';
 import { CommandRegistry } from './commands/registry.js';
 import type { CommandDefinition } from './commands/types.js';
+import { EventLogService } from './eventLog.js';
 import { LogService } from './logs.js';
+import { MessageCache } from './messageCache.js';
+import { ModerationService } from './moderation/service.js';
 import { PermissionService } from './permissions/service.js';
 import { SettingsService } from './settings.js';
 
@@ -20,6 +23,9 @@ export interface Services {
   settings: SettingsService;
   permissions: PermissionService;
   logs: LogService;
+  eventLog: EventLogService;
+  messageCache: MessageCache;
+  moderation: ModerationService;
   registry: CommandRegistry;
 }
 
@@ -28,6 +34,7 @@ export interface ContainerDeps {
   logger: Logger;
   guild: GuildPort;
   messenger: MessengerPort;
+  mod: ModerationPort;
   bot: BotInfoPort;
   commands: CommandDefinition[];
 }
@@ -45,6 +52,19 @@ export function createContainer(deps: ContainerDeps): Container {
   const settings = new SettingsService(db, guildId, audit, logger);
   const permissions = new PermissionService(db, guildId, settings, audit, () => registry);
   const logs = new LogService(db, guildId, settings, deps.messenger, logger);
+  const eventLog = new EventLogService(logs, settings);
+  const messageCache = new MessageCache(settings.get().logs.messageCacheSize);
+  settings.onChange((next) => messageCache.resize(next.logs.messageCacheSize));
+  const moderation = new ModerationService({
+    db,
+    guildId,
+    guild,
+    mod: deps.mod,
+    logs,
+    settings,
+    bot: deps.bot,
+    logger,
+  });
 
   const services: Services = {
     db,
@@ -56,6 +76,9 @@ export function createContainer(deps: ContainerDeps): Container {
     settings,
     permissions,
     logs,
+    eventLog,
+    messageCache,
+    moderation,
     registry,
   };
   return { services, executor: new CommandExecutor(services, logger) };

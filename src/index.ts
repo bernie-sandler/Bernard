@@ -2,11 +2,14 @@ import { Events } from 'discord.js';
 import { createApiServer } from './api/server.js';
 import { createDiscordClient } from './bot/client.js';
 import { allCommands } from './bot/commands/index.js';
+import { registerLoggingEvents } from './bot/events/logging.js';
 import { onReady } from './bot/events/ready.js';
 import { createInteractionHandler } from './bot/interactions.js';
 import { ConfigError, type Env, loadEnv } from './config/env.js';
 import { openDb, runMigrations } from './db/client.js';
-import { DiscordBotInfo, DiscordGuildPort, DiscordMessenger } from './discord/adapters.js';
+import { DiscordBotInfo, DiscordGuildPort, DiscordMessenger, DiscordModeration } from './discord/adapters.js';
+import { startJobs } from './jobs/index.js';
+import type { Scheduler } from './jobs/scheduler.js';
 import { createLogger } from './logger.js';
 import { BotStateStore } from './services/botState.js';
 import { createContainer } from './services/container.js';
@@ -38,17 +41,24 @@ async function main(): Promise<void> {
     logger,
     guild: new DiscordGuildPort(client, env.GUILD_ID),
     messenger: new DiscordMessenger(client),
+    mod: new DiscordModeration(client, env.GUILD_ID),
     bot: new DiscordBotInfo(client),
     commands: allCommands,
   });
   const state = new BotStateStore(dbHandle.db, env.GUILD_ID);
 
+  let scheduler: Scheduler | null = null;
   client.once(Events.ClientReady, (c) => {
-    onReady({ client: c, env, services: container.services, state, logger }).catch((err) => {
-      logger.fatal({ err }, 'Startup failed after connecting to Discord');
-      void shutdown(1);
-    });
+    onReady({ client: c, env, services: container.services, state, logger })
+      .then(() => {
+        scheduler = startJobs(container.services, logger);
+      })
+      .catch((err) => {
+        logger.fatal({ err }, 'Startup failed after connecting to Discord');
+        void shutdown(1);
+      });
   });
+  registerLoggingEvents(client, container.services, logger);
   client.on(Events.InteractionCreate, createInteractionHandler({ ...container, logger }));
   client.on(Events.Error, (err) => logger.error({ err }, 'Discord client error'));
   client.on(Events.Warn, (msg) => logger.warn({ msg }, 'Discord client warning'));
@@ -61,6 +71,7 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     logger.info('Shutting down');
+    scheduler?.stop();
     await api.close().catch(() => {});
     await client.destroy().catch(() => {});
     dbHandle.close();
