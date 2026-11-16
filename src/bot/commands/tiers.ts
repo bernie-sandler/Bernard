@@ -196,17 +196,33 @@ export const tiersCommand = defineTree({
     }),
     defineCommand({
       name: 'tenure-sync',
-      description: 'Promote members by tenure only (ignores activity, never moves anyone down)',
+      description: 'Put every member in the tier their tenure earns (ignores activity)',
       node: 'config:tiers',
-      options: {},
-      async execute(ctx) {
+      options: {
+        preview: opt.boolean({ description: 'Show what would change without changing any roles' }),
+      },
+      async execute(ctx, input) {
         const { tiers, settings } = ctx.services;
         if (tiers.list().length === 0) throw new UserError('No tiers configured.');
-        const s = await tiers.syncAll(`tenure-only sync by ${ctx.actor.displayName}`, { tenureOnly: true });
+        const preview = input.preview === true;
+        const s = await tiers.syncAll(`tenure-only sync by ${ctx.actor.displayName}`, {
+          tenureOnly: true,
+          ...(preview ? { dryRun: true } : {}),
+        });
         const t = settings.get().tiers;
+        const moves = (s.byTier ?? [])
+          .filter((b) => b.gained || b.lost)
+          .map(
+            (b) =>
+              `• **${b.name}**: ${[b.gained ? `+${b.gained}` : null, b.lost ? `−${b.lost}` : null].filter(Boolean).join(' / ')}`,
+          );
+        const verb = preview ? 'would change' : 'changed';
         const lines = [
-          `Tenure-only sync of ${s.members} member(s): ${s.changed} promoted${s.skipped ? `, ${s.skipped} role change(s) skipped (hierarchy; see /tiers check)` : ''}${s.errors ? `, ${s.errors} error(s)` : ''}.`,
-          'Activity requirements were ignored and nobody lost a tier they already had.',
+          `${preview ? '🔍 Preview: tenure' : 'Tenure'}-only sync of ${s.members} member(s): ${s.changed} ${verb}${s.skipped ? `, ${s.skipped} role change(s) skipped (hierarchy; see /tiers check)` : ''}${s.errors ? `, ${s.errors} error(s)` : ''}.`,
+          ...(moves.length ? [moves.join('\n')] : []),
+          preview
+            ? 'Nothing was changed. Run `/tiers tenure-sync` without `preview` to apply.'
+            : 'Activity requirements were ignored; each member now has the tier their tenure earns.',
         ];
         if (t.demotion) {
           lines.push(

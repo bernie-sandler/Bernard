@@ -91,13 +91,17 @@ export interface TierCheck {
 export interface SyncSummary {
   at: string;
   reason: string;
-  /** full = tenure and activity; tenure = tenure-only, never demotes. */
+  /** full = tenure and activity; tenure = placement by tenure alone. */
   basis: 'full' | 'tenure';
   members: number;
   changed: number;
   skipped: number;
   errors: number;
   durationMs: number;
+  /** How many members gained or lost each tier's role (or would, in a dry run). */
+  byTier?: { name: string; gained: number; lost: number }[];
+  /** True when nothing was applied. */
+  dryRun?: boolean;
 }
 
 export interface TierDeps {
@@ -362,10 +366,12 @@ export class TierService {
       reason?: string;
       manageable?: Set<string>;
       /**
-       * Tenure-only: ignore activity thresholds and never move anyone down. Held tiers are always
-       * kept, and the demotion grace timers are left untouched.
+       * Tenure-only placement: ignore activity thresholds and put the member exactly in the tier(s)
+       * their tenure earns, adding and removing tier roles as needed (including higher ones).
        */
       tenureOnly?: boolean;
+      /** Work out the changes without applying them. */
+      dryRun?: boolean;
     } = {},
   ): Promise<{ added: string[]; removed: string[]; skipped: number }> {
     const list = this.list();
@@ -374,20 +380,31 @@ export class TierService {
     const now = new Date(this.now());
     const row = this.d.members.get(member.userId);
     const joinedAt = row?.joinedAt ?? member.joinedAt ?? now;
-    const plan = planTiers({
-      tiers: list,
-      roleIds: member.roleIds,
-      tenureDays: tenureDays(joinedAt, now.getTime()),
-      score: opts.tenureOnly
-        ? Number.POSITIVE_INFINITY
-        : (opts.score ?? this.d.activity.totals(member.userId).score),
-      belowSince: this.loadBelowSince(member.userId),
-      mode: s.mode,
-      demotion: opts.tenureOnly ? false : s.demotion,
-      graceDays: s.demotionGraceDays,
-      now,
-    });
-    if (!opts.tenureOnly) this.saveBelowSince(member.userId, plan.belowSince);
+    const belowSince = this.loadBelowSince(member.userId);
+    const plan = opts.tenureOnly
+      ? // Activity counts as met and any held tier the tenure doesn't earn is dropped immediately.
+        planTiers({
+          tiers: list,
+          roleIds: member.roleIds,
+          tenureDays: tenureDays(joinedAt, now.getTime()),
+          score: Number.POSITIVE_INFINITY,
+          belowSince: new Map(),
+          mode: s.mode,
+          demotion: true,
+          graceDays: 0,
+          now,
+        })
+      : planTiers({
+          tiers: list,
+          roleIds: member.roleIds,
+          tenureDays: tenureDays(joinedAt, now.getTime()),
+          score: opts.score ?? this.d.activity.totals(member.userId).score,
+          belowSince,
+          mode: s.mode,
+          demotion: s.demotion,
+          graceDays: s.demotionGraceDays,
+          now,
+        });
 
     const manageable =
       opts.manageable ??
@@ -399,6 +416,15 @@ export class TierService {
     const add = plan.add.filter((r) => manageable.has(r));
     const remove = plan.remove.filter((r) => manageable.has(r));
     const skipped = plan.add.length + plan.remove.length - add.length - remove.length;
+    if (opts.dryRun) return { added: add, removed: remove, skipped };
+
+    if (opts.tenureOnly) {
+      // Keep grace timers only for tiers the member still holds afterwards.
+      const kept = new Set(plan.target.map((t) => t.id));
+      this.saveBelowSince(member.userId, new Map([...belowSince].filter(([id]) => kept.has(id))));
+    } else {
+      this.saveBelowSince(member.userId, plan.belowSince);
+    }
     // Add before removing so a promoted member is never briefly without a tier role.
     const auditReason = opts.tenureOnly ? 'Tier sync (tenure only)' : 'Tier sync';
     for (const r of add) await this.d.mod.addRole(member.userId, r, auditReason);
@@ -415,7 +441,7 @@ export class TierService {
   }
 
   /** Re-evaluate every member now. */
-  async syncAll(reason: string, opts: { tenureOnly?: boolean } = {}): Promise<SyncSummary> {
+  async syncAll(reason: string, opts: { tenureOnly?: boolean; dryRun?: boolean } = {}): Promise<SyncSummary> {
     if (this.syncing) throw new UserError('A tier sync is already running.');
     this.syncing = true;
     const started = this.now();
@@ -423,6 +449,8 @@ export class TierService {
     let skipped = 0;
     let errors = 0;
     let count = 0;
+    const tierList = this.list();
+    const byRole = new Map(tierList.map((t) => [t.roleId, { name: t.name, gained: 0, lost: 0 }]));
     try {
       const memberList = await this.d.guild.listMembers();
       const scores = new Map(this.d.activity.allTotals().map((t) => [t.userId, t.score]));
@@ -439,8 +467,11 @@ export class TierService {
             reason,
             manageable,
             ...(opts.tenureOnly ? { tenureOnly: true } : {}),
+            ...(opts.dryRun ? { dryRun: true } : {}),
           });
           if (r.added.length || r.removed.length) changed++;
+          for (const roleId of r.added) byRole.get(roleId)!.gained++;
+          for (const roleId of r.removed) byRole.get(roleId)!.lost++;
           skipped += r.skipped;
         } catch (err) {
           errors++;
@@ -459,15 +490,19 @@ export class TierService {
       skipped,
       errors,
       durationMs: this.now() - started,
+      byTier: tierList.map((t) => byRole.get(t.roleId)!),
+      ...(opts.dryRun ? { dryRun: true } : {}),
     };
+    if (opts.dryRun) return summary;
     // A tenure-only sync is a one-off; it must not postpone the next regular sync.
     this.d.state.set(opts.tenureOnly ? 'last_tenure_sync' : 'last_tier_sync', JSON.stringify(summary));
     this.d.logger.info(summary, 'Tier sync finished');
     return summary;
   }
 
-  lastSync(): SyncSummary | null {
-    const raw = this.d.state.get('last_tier_sync');
+  /** Last regular sync, or with basis 'tenure' the last tenure-only sync. */
+  lastSync(basis: 'full' | 'tenure' = 'full'): SyncSummary | null {
+    const raw = this.d.state.get(basis === 'tenure' ? 'last_tenure_sync' : 'last_tier_sync');
     if (!raw) return null;
     try {
       return JSON.parse(raw) as SyncSummary;
