@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Bot failing to start with `LOG_PRETTY=true` in the Docker image (`unable to determine transport target for "pino-pretty"`). `pino-pretty` was a dev-only dependency and was pruned from the production image; it is now a runtime dependency, and if it is ever missing the bot logs a warning and falls back to JSON logs instead of crashing.
+
 ## [0.1.2] - 2026-11-16
 
 ### Fixed
