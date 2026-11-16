@@ -3,6 +3,7 @@ import { openDb, runMigrations } from '../src/db/client.js';
 import type {
   BotInfoPort,
   ChannelInfo,
+  CreateVoiceChannelOptions,
   GuildPort,
   GuildSummary,
   LockState,
@@ -12,6 +13,7 @@ import type {
   ModerationPort,
   RoleInfo,
   UserInfo,
+  VoicePort,
 } from '../src/discord/ports.js';
 import { nullLogger } from '../src/logger.js';
 import type { Actor, CommandDefinition } from '../src/services/commands/types.js';
@@ -224,6 +226,82 @@ export class FakeBot implements BotInfoPort {
   }
 }
 
+/** In-memory voice state. moveMember queues the gateway event; flushVoice() delivers queued events. */
+export class FakeVoice implements VoicePort {
+  states = new Map<string, string>();
+  bots = new Set<string>();
+  existing = new Set<string>();
+  created: { id: string; opts: CreateVoiceChannelOptions }[] = [];
+  deleted: string[] = [];
+  overwrites = new Map<string, Map<string, 'allow' | 'deny'>>();
+  everyoneDenied = new Map<string, boolean>();
+  limits = new Map<string, number>();
+  names = new Map<string, string>();
+  notices: { channelId: string; text: string }[] = [];
+  pending: { userId: string; from: string | null; to: string | null }[] = [];
+  failCreate = false;
+  failMove = false;
+
+  constructor(private readonly guild: FakeGuild) {}
+
+  addVoiceChannel(name: string, kind: ChannelInfo['kind'] = 'voice'): string {
+    const id = this.guild.addChannel(name, kind);
+    this.existing.add(id);
+    return id;
+  }
+  async createVoiceChannel(opts: CreateVoiceChannelOptions) {
+    if (this.failCreate) throw new Error('Maximum number of channels in category reached');
+    const id = this.addVoiceChannel(opts.name);
+    this.created.push({ id, opts });
+    this.names.set(id, opts.name);
+    this.everyoneDenied.set(id, opts.denyEveryoneConnect);
+    this.limits.set(id, opts.userLimit);
+    this.overwrites.set(id, new Map([[opts.ownerId, 'allow']]));
+    return id;
+  }
+  async deleteChannel(channelId: string) {
+    this.existing.delete(channelId);
+    this.guild.channels.delete(channelId);
+    this.deleted.push(channelId);
+  }
+  async moveMember(userId: string, channelId: string | null) {
+    if (this.failMove) throw new Error('Target user is not connected to voice');
+    const from = this.states.get(userId) ?? null;
+    if (channelId) this.states.set(userId, channelId);
+    else this.states.delete(userId);
+    this.pending.push({ userId, from, to: channelId });
+  }
+  channelExists(channelId: string) {
+    return this.existing.has(channelId);
+  }
+  channelMembers(channelId: string) {
+    return [...this.states.entries()]
+      .filter(([u, c]) => c === channelId && !this.bots.has(u))
+      .map(([u]) => u);
+  }
+  memberVoiceChannel(userId: string) {
+    return this.states.get(userId) ?? null;
+  }
+  async setUserLimit(channelId: string, limit: number) {
+    this.limits.set(channelId, limit);
+  }
+  async rename(channelId: string, name: string) {
+    this.names.set(channelId, name);
+  }
+  async setEveryoneDenied(channelId: string, denied: boolean) {
+    this.everyoneDenied.set(channelId, denied);
+  }
+  async setMemberAccess(channelId: string, userId: string, access: 'allow' | 'deny' | null) {
+    const map = this.overwrites.get(channelId) ?? new Map();
+    if (access) map.set(userId, access);
+    else map.delete(userId);
+    this.overwrites.set(channelId, map);
+  }
+  async notify(channelId: string, text: string) {
+    this.notices.push({ channelId, text });
+  }
+}
+
 export function makeActor(member: MemberInfo): Actor {
   return {
     userId: member.userId,
@@ -241,14 +319,16 @@ export function testContainer(commands: CommandDefinition[] = allCommands) {
   const guild = new FakeGuild();
   const messenger = new FakeMessenger();
   const mod = new FakeModeration(guild);
+  const voice = new FakeVoice(guild);
   const container = createContainer({
     db: dbHandle.db,
     logger: nullLogger,
     guild,
     messenger,
     mod,
+    voice,
     bot: new FakeBot(),
     commands,
   });
-  return { ...container, guild, messenger, mod, db: dbHandle.db, close: dbHandle.close };
+  return { ...container, guild, messenger, mod, voice, db: dbHandle.db, close: dbHandle.close };
 }

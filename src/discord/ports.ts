@@ -128,3 +128,35 @@ export interface BotInfoPort {
   /** The bot's user ID once logged in. */
   userId(): string | null;
 }
+
+export interface CreateVoiceChannelOptions {
+  name: string;
+  categoryId: string;
+  userLimit: number;
+  ownerId: string;
+  /** Deny Connect for @everyone (private hubs). */
+  denyEveryoneConnect: boolean;
+  /** Also deny View Channel for @everyone. */
+  hideFromEveryone: boolean;
+}
+
+/** Join-to-create voice channel operations. */
+export interface VoicePort {
+  createVoiceChannel(opts: CreateVoiceChannelOptions): Promise<string>;
+  deleteChannel(channelId: string, reason?: string): Promise<void>;
+  /** Move a member to a voice channel, or disconnect them with null. */
+  moveMember(userId: string, channelId: string | null): Promise<void>;
+  channelExists(channelId: string): boolean;
+  /** Human (non-bot) members currently connected to a voice channel. */
+  channelMembers(channelId: string): string[];
+  /** The voice channel a member is connected to, if any. */
+  memberVoiceChannel(userId: string): string | null;
+  setUserLimit(channelId: string, limit: number): Promise<void>;
+  rename(channelId: string, name: string): Promise<void>;
+  /** true = deny Connect for @everyone, false = remove that deny. */
+  setEveryoneDenied(channelId: string, denied: boolean): Promise<void>;
+  /** allow = Connect+View allowed, deny = Connect denied, null = remove the member's overwrite. */
+  setMemberAccess(channelId: string, userId: string, access: 'allow' | 'deny' | null): Promise<void>;
+  /** Post a short notice in the voice channel's built-in text chat, deleted after `deleteAfterMs`. */
+  notify(channelId: string, text: string, deleteAfterMs?: number): Promise<void>;
+}

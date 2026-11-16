@@ -41,6 +41,9 @@ export async function onReady(deps: {
     logger,
   });
 
+  const voice = await services.voice.reconcile();
+  logger.info(voice, 'Voice channels reconciled');
+
   if (!services.permissions.hasAnyRules()) {
     logger.warn(
       services.settings.get().permissions.adminBypass

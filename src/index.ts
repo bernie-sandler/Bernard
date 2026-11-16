@@ -4,10 +4,12 @@ import { createDiscordClient } from './bot/client.js';
 import { allCommands } from './bot/commands/index.js';
 import { registerLoggingEvents } from './bot/events/logging.js';
 import { onReady } from './bot/events/ready.js';
+import { registerVoiceEvents } from './bot/events/voice.js';
 import { createInteractionHandler } from './bot/interactions.js';
 import { ConfigError, type Env, loadEnv } from './config/env.js';
 import { openDb, runMigrations } from './db/client.js';
 import { DiscordBotInfo, DiscordGuildPort, DiscordMessenger, DiscordModeration } from './discord/adapters.js';
+import { DiscordVoice } from './discord/voiceAdapter.js';
 import { startJobs } from './jobs/index.js';
 import type { Scheduler } from './jobs/scheduler.js';
 import { createLogger } from './logger.js';
@@ -42,6 +44,7 @@ async function main(): Promise<void> {
     guild: new DiscordGuildPort(client, env.GUILD_ID),
     messenger: new DiscordMessenger(client),
     mod: new DiscordModeration(client, env.GUILD_ID),
+    voice: new DiscordVoice(client, env.GUILD_ID),
     bot: new DiscordBotInfo(client),
     commands: allCommands,
   });
@@ -59,6 +62,7 @@ async function main(): Promise<void> {
       });
   });
   registerLoggingEvents(client, container.services, logger);
+  registerVoiceEvents(client, container.services, logger);
   client.on(Events.InteractionCreate, createInteractionHandler({ ...container, logger }));
   client.on(Events.Error, (err) => logger.error({ err }, 'Discord client error'));
   client.on(Events.Warn, (msg) => logger.warn({ msg }, 'Discord client warning'));
@@ -72,6 +76,7 @@ async function main(): Promise<void> {
     shuttingDown = true;
     logger.info('Shutting down');
     scheduler?.stop();
+    container.services.voice.stop();
     await api.close().catch(() => {});
     await client.destroy().catch(() => {});
     dbHandle.close();

@@ -1,5 +1,5 @@
 import type { Db } from '../db/client.js';
-import type { BotInfoPort, GuildPort, MessengerPort, ModerationPort } from '../discord/ports.js';
+import type { BotInfoPort, GuildPort, MessengerPort, ModerationPort, VoicePort } from '../discord/ports.js';
 import type { Logger } from '../logger.js';
 import { AuditService } from './audit.js';
 import { CommandExecutor } from './commands/executor.js';
@@ -11,6 +11,7 @@ import { MessageCache } from './messageCache.js';
 import { ModerationService } from './moderation/service.js';
 import { PermissionService } from './permissions/service.js';
 import { SettingsService } from './settings.js';
+import { VoiceService } from './voice.js';
 
 /** Everything commands and API routes can reach. */
 export interface Services {
@@ -26,6 +27,7 @@ export interface Services {
   eventLog: EventLogService;
   messageCache: MessageCache;
   moderation: ModerationService;
+  voice: VoiceService;
   registry: CommandRegistry;
 }
 
@@ -35,6 +37,7 @@ export interface ContainerDeps {
   guild: GuildPort;
   messenger: MessengerPort;
   mod: ModerationPort;
+  voice: VoicePort;
   bot: BotInfoPort;
   commands: CommandDefinition[];
 }
@@ -66,6 +69,8 @@ export function createContainer(deps: ContainerDeps): Container {
     logger,
   });
 
+  const voice = new VoiceService({ db, guildId, voice: deps.voice, guild, settings, audit, logger });
+
   const services: Services = {
     db,
     logger,
@@ -79,6 +84,7 @@ export function createContainer(deps: ContainerDeps): Container {
     eventLog,
     messageCache,
     moderation,
+    voice,
     registry,
   };
   return { services, executor: new CommandExecutor(services, logger) };

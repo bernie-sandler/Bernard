@@ -13,6 +13,8 @@ import { type ChannelSnapshot, diffChannel, diffRole, type RoleSnapshot } from '
 import type { CachedMessage } from '../../services/messageCache.js';
 import { mapAuditEntry } from '../../services/moderation/external.js';
 
+const TEMP_CHANNEL_SETTLE_MS = 3000;
+
 function roleSnapshot(r: Role): RoleSnapshot {
   return {
     id: r.id,
@@ -222,23 +224,25 @@ export function registerLoggingEvents(client: Client, services: Services, logger
   client.on(
     Events.ChannelCreate,
     safe('channelCreate', async (c) => {
-      if (c.guildId === guildId) {
-        await eventLog.channelEvent('create', channelSnapshot(c));
-      }
+      if (c.guildId !== guildId) return;
+      // The gateway event can beat VoiceService's DB insert, so wait briefly before checking for temp channels.
+      await new Promise((r) => setTimeout(r, TEMP_CHANNEL_SETTLE_MS));
+      if (services.voice.isManagedChannel(c.id)) return;
+      await eventLog.channelEvent('create', channelSnapshot(c));
     }),
   );
   client.on(
     Events.ChannelDelete,
     safe('channelDelete', async (c) => {
-      if (isGuildChannel(c) && c.guildId === guildId) {
-        await eventLog.channelEvent('delete', channelSnapshot(c));
-      }
+      if (!isGuildChannel(c) || c.guildId !== guildId || services.voice.isManagedChannel(c.id)) return;
+      await eventLog.channelEvent('delete', channelSnapshot(c));
     }),
   );
   client.on(
     Events.ChannelUpdate,
     safe('channelUpdate', async (a, b) => {
       if (!isGuildChannel(a) || !isGuildChannel(b) || b.guildId !== guildId) return;
+      if (services.voice.isManagedChannel(b.id)) return; // temp voice channels change constantly
       const before = channelSnapshot(a);
       const after = channelSnapshot(b);
       await eventLog.channelEvent('update', after, diffChannel(before, after));

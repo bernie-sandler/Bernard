@@ -2,7 +2,7 @@
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-> **Status: Phase 2 of 7 (Moderation & Logs).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), `/userinfo`, `/serverinfo`, `/healthz` and Docker. Voice hubs, tiers and the dashboard arrive in later phases.
+> **Status: Phase 3 of 7 (Voice).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs with owner commands and startup reconciliation, `/userinfo`, `/serverinfo`, `/healthz` and Docker. Tenure and activity tiers, and the dashboard, arrive in later phases.
 
 ## Requirements
 
@@ -122,23 +122,23 @@ To restore: stop the container, copy the file back to `/data/bernard.db`, and st
 
 ## Commands
 
-| Command | Node | Notes |
-|---|---|---|
-| `/help`, `/ping`, `/userinfo [user]`, `/serverinfo` | `public:*` | Open to everyone by default. `/help` lists only commands you can use. |
-| `/permset`, `/permunset`, `/permlist`, `/permcheck` | `config:perm*` | Manage the permission rules. |
-| `/ban user [reason] [duration] [delete_days]` | `admin:ban` | With `duration` (e.g. `7d`, max 365d) it's a temporary ban, lifted automatically. |
-| `/unban`, `/kick` | `admin:unban`, `admin:kick` | |
-| `/timeout user duration [reason]`, `/untimeout` | `admin:timeout`, `admin:untimeout` | Max 28 days (a Discord limit). Members with Administrator can't be timed out. |
-| `/warn user reason` | `admin:warn` | |
-| `/warnings list user`, `/warnings remove case` | `admin:warnings` | Removing a warning keeps it in history and marks it removed. |
-| `/purge amount [user] [channel]` | `admin:purge` | 1-100 messages. With `user` it scans up to 500 recent messages. Skips pinned messages and anything older than 14 days, and reports both. |
-| `/slowmode seconds [channel]` | `admin:slowmode` | 0 turns it off. |
-| `/lock [channel]`, `/unlock [channel]` | `admin:lock`, `admin:unlock` | Lock denies sending for @everyone. Unlock restores the previous overwrite. |
-| `/role add`, `/role remove` | `admin:role` | Refuses roles at or above the bot's or your highest role, plus managed roles. |
-| `/nick user [nickname]` | `admin:nick` | Leave `nickname` empty to reset it. |
-| `/announce channel message [embed] [title]` | `admin:announce` | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does. |
-| `/case id` | `admin:case` | |
-| `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs` | |
+| Command                                                    | Node                               | Notes                                                                                                                                    |
+| ---------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/help`, `/ping`, `/userinfo [user]`, `/serverinfo`        | `public:*`                         | Open to everyone by default. `/help` lists only commands you can use.                                                                    |
+| `/permset`, `/permunset`, `/permlist`, `/permcheck`        | `config:perm*`                     | Manage the permission rules.                                                                                                             |
+| `/ban user [reason] [duration] [delete_days]`              | `admin:ban`                        | With `duration` (e.g. `7d`, max 365d) it's a temporary ban, lifted automatically.                                                        |
+| `/unban`, `/kick`                                          | `admin:unban`, `admin:kick`        |                                                                                                                                          |
+| `/timeout user duration [reason]`, `/untimeout`            | `admin:timeout`, `admin:untimeout` | Max 28 days (a Discord limit). Members with Administrator can't be timed out.                                                            |
+| `/warn user reason`                                        | `admin:warn`                       |                                                                                                                                          |
+| `/warnings list user`, `/warnings remove case`             | `admin:warnings`                   | Removing a warning keeps it in history and marks it removed.                                                                             |
+| `/purge amount [user] [channel]`                           | `admin:purge`                      | 1-100 messages. With `user` it scans up to 500 recent messages. Skips pinned messages and anything older than 14 days, and reports both. |
+| `/slowmode seconds [channel]`                              | `admin:slowmode`                   | 0 turns it off.                                                                                                                          |
+| `/lock [channel]`, `/unlock [channel]`                     | `admin:lock`, `admin:unlock`       | Lock denies sending for @everyone. Unlock restores the previous overwrite.                                                               |
+| `/role add`, `/role remove`                                | `admin:role`                       | Refuses roles at or above the bot's or your highest role, plus managed roles.                                                            |
+| `/nick user [nickname]`                                    | `admin:nick`                       | Leave `nickname` empty to reset it.                                                                                                      |
+| `/announce channel message [embed] [title]`                | `admin:announce`                   | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does.                                          |
+| `/case id`                                                 | `admin:case`                       |                                                                                                                                          |
+| `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs`                      |                                                                                                                                          |
 
 Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlock`) require a channel when run from the dashboard.
 
@@ -152,19 +152,52 @@ Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlo
 
 ## Logs
 
-| Type | Events |
-|---|---|
-| `moderation` | Every mod case, warning removals |
-| `members` | Joins (with account age and a new-account warning), leaves, nickname changes |
-| `messages` | Edits (before/after), deletes (content, attachment names), bulk deletes |
-| `voice` | Joins, leaves and moves |
-| `server` | Role and channel create/delete/update, member role changes |
-| `commands` | Every command use: who, what, arguments, allowed/denied, slash or dashboard |
+| Type         | Events                                                                       |
+| ------------ | ---------------------------------------------------------------------------- |
+| `moderation` | Every mod case, warning removals                                             |
+| `members`    | Joins (with account age and a new-account warning), leaves, nickname changes |
+| `messages`   | Edits (before/after), deletes (content, attachment names), bulk deletes      |
+| `voice`      | Joins, leaves and moves                                                      |
+| `server`     | Role and channel create/delete/update, member role changes                   |
+| `commands`   | Every command use: who, what, arguments, allowed/denied, slash or dashboard  |
 
 - `/logs set` posts a test message first and refuses channels the bot can't write to.
 - Entries are always **stored in the database**, even for types not routed to a channel, so the dashboard can search them. Stored entries are pruned after `retentionDays` (default 30), checked daily at 03:30 and at startup.
 - Message content for edit/delete logs comes from a **bounded in-memory cache** (default 5000 messages, set with `/logs config cache_size`). Edits and deletes of messages sent before the bot started, or already evicted, are logged as "not cached". Discord doesn't report who deleted a message, so delete logs don't include that.
 - Events in log channels themselves are ignored, and bot messages aren't logged.
+- Create, delete and update events for temporary voice channels are left out of the `server` log. Joins, leaves and moves still appear in the `voice` log.
+
+## Join-to-create voice
+
+Members join a **hub** voice channel. The bot then creates a channel for them in the hub's category, makes them the owner and moves them in.
+
+```
+/voice hub add channel:#➕-join type:public category:#Temp Voice name_template:{user}'s Channel
+/voice hub add channel:#🔒-private type:private category:#Temp Voice hide:false
+/voice settings grace_seconds:10 cooldown_seconds:30 owner_leave:transfer
+```
+
+- **Public** hubs create channels anyone can join. **Private** hubs deny Connect for @everyone, and the channel stays visible unless `hide:true`. The owner, and anyone they `/vc invite`, can connect.
+- Name templates support `{user}` (display name), `{username}` and `{count}` (the channel's number for that hub).
+- An empty channel is deleted after `grace_seconds` (default 10). A reconnect within that window keeps it.
+- When the owner leaves a channel that still has people in it:
+  - with `owner_leave:transfer` (the default), the longest-present member becomes owner;
+  - with `owner_leave:claim`, anyone inside can `/vc claim` it.
+- **Abuse protection:** each member can create one channel per `cooldown_seconds` (default 30). Someone on cooldown is disconnected from the hub with a short notice in the hub's text chat, which deletes itself after 10 seconds.
+- **On startup** the bot deletes empty tracked channels, forgets channels that no longer exist, fixes owners who left while it was offline, and creates channels for anyone already waiting in a hub. A restart leaves no orphan channels.
+- If a hub channel is deleted, its hub configuration is removed too. Temporary channels count towards Discord's limit of 50 channels per category. When a category is full, the member gets a notice instead of a channel.
+
+| Owner command            | Node                         | What it does                                                                                                 |
+| ------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `/vc lock`, `/vc unlock` | `voice:lock`, `voice:unlock` | Deny or allow Connect for @everyone. People already inside can still reconnect after a lock.                 |
+| `/vc limit limit`        | `voice:limit`                | User limit, 0-99 (0 = unlimited).                                                                            |
+| `/vc rename name`        | `voice:rename`               | Discord allows 2 renames per channel per 10 minutes. A blocked rename replies with how many minutes to wait. |
+| `/vc invite user`        | `voice:invite`               | Allow a member to connect even when the channel is locked or private.                                        |
+| `/vc kick user`          | `voice:kick`                 | Disconnect a member and block them from rejoining.                                                           |
+| `/vc transfer user`      | `voice:transfer`             | Give ownership to someone in the channel.                                                                    |
+| `/vc claim`              | `voice:claim`                | Take over a channel whose owner left.                                                                        |
+
+`voice:*` is allowed for @everyone by default, but these commands only work for the owner of the temporary channel you're in. `/voice ...` needs `config:voice`.
 
 ## Permissions model
 
