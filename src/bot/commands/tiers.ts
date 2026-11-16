@@ -22,6 +22,11 @@ function resolveTier(ctx: Parameters<AutocompleteHandler>[0], ref: string): Tier
   return t;
 }
 
+/** Name of the configured floor tier, or null when unset or the tier was deleted. */
+function floorName(ctx: Parameters<AutocompleteHandler>[0], id: number | null): string | null {
+  return id === null ? null : (ctx.services.tiers.get(id)?.name ?? null);
+}
+
 const fmtPoints = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(1));
 
 function tierLine(t: TierRow, members?: number): string {
@@ -64,7 +69,8 @@ export const tiersCommand = defineTree({
                   name: 'Settings',
                   value: [
                     `Mode: ${s.tiers.mode === 'highest_only' ? 'highest tier only' : 'stack all earned tiers'}`,
-                    `Demotion: ${s.tiers.demotion ? `on, after ${s.tiers.demotionGraceDays} day(s) below` : 'off'}`,
+                    `Demotion: ${s.tiers.demotion ? `on, one tier per ${s.tiers.demotionGraceDays} day(s) below` : 'off'}`,
+                    `Floor: ${floorName(ctx, s.tiers.demotionFloorTierId) ?? 'none'}`,
                     `Activity window: ${s.activity.windowDays} days · Sync every ${s.tiers.syncIntervalMinutes} min`,
                     `Excluded roles: ${s.tiers.excludedRoleIds.map((r) => `<@&${r}>`).join(' ') || 'none'}`,
                   ].join('\n'),
@@ -244,27 +250,47 @@ export const tiersCommand = defineTree({
             { name: 'stack', value: 'stack' },
           ],
         }),
-        demotion: opt.boolean({ description: 'Remove tiers when activity drops below the threshold' }),
-        grace_days: opt.integer({ description: 'Days below a threshold before demotion', min: 0, max: 90 }),
+        demotion: opt.boolean({ description: 'Step members down one tier at a time when activity drops' }),
+        grace_days: opt.integer({ description: 'Days below a tier before each step down', min: 0, max: 90 }),
+        floor: opt.string({
+          description: "Lowest tier demotion can reach for members who meet its tenure ('none' to clear)",
+          autocomplete: true,
+          maxLength: 50,
+        }),
         sync_minutes: opt.integer({ description: 'Minutes between automatic syncs', min: 5, max: 1440 }),
+      },
+      autocomplete: {
+        floor: async (ctx, focused) =>
+          [{ name: 'none (no floor)', value: 'none' }, ...(await tierAutocomplete(ctx, focused))].slice(
+            0,
+            25,
+          ),
       },
       async execute(ctx, input) {
         if (
           !input.mode &&
           input.demotion === undefined &&
           input.grace_days === undefined &&
-          input.sync_minutes === undefined
+          input.sync_minutes === undefined &&
+          input.floor === undefined
         ) {
           throw new UserError('Pass at least one option. Use /tiers list to see current values.');
         }
+        const floorId =
+          input.floor === undefined
+            ? undefined
+            : input.floor.toLowerCase() === 'none'
+              ? null
+              : resolveTier(ctx, input.floor).id;
         const t = ctx.services.settings.update(actorOf(ctx), 'settings.tiers', (s) => {
           if (input.mode) s.tiers.mode = input.mode as 'highest_only' | 'stack';
           if (input.demotion !== undefined) s.tiers.demotion = input.demotion;
           if (input.grace_days !== undefined) s.tiers.demotionGraceDays = input.grace_days;
           if (input.sync_minutes !== undefined) s.tiers.syncIntervalMinutes = input.sync_minutes;
+          if (floorId !== undefined) s.tiers.demotionFloorTierId = floorId;
         }).tiers;
         return ok(
-          `Saved. Mode: ${t.mode} · Demotion: ${t.demotion ? `on (${t.demotionGraceDays}d grace)` : 'off'} · Sync every ${t.syncIntervalMinutes} min.`,
+          `Saved. Mode: ${t.mode} · Demotion: ${t.demotion ? `on, one tier per ${t.demotionGraceDays}d` : 'off'} · Floor: ${floorName(ctx, t.demotionFloorTierId) ?? 'none'} · Sync every ${t.syncIntervalMinutes} min.`,
         );
       },
     }),

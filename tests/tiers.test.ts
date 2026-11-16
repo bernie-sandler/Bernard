@@ -589,3 +589,169 @@ describe('tenure-only sync', () => {
     expect((await run()).result.content).not.toMatch(/Demotion is on/);
   });
 });
+
+describe('step-by-step demotion with a floor', () => {
+  // The server's real ladder: New Comer → Member → Regular → Veteran → Core → Trusted.
+  const LADDER: TierDef[] = [
+    { id: 1, name: 'New Comer', roleId: 'nc', minTenureDays: 0, minActivity: 0, position: 1 },
+    { id: 2, name: 'Member', roleId: 'mem', minTenureDays: 30, minActivity: 60, position: 2 },
+    { id: 3, name: 'Regular', roleId: 'reg', minTenureDays: 180, minActivity: 300, position: 3 },
+    { id: 4, name: 'Veteran', roleId: 'vet', minTenureDays: 365, minActivity: 1200, position: 4 },
+    { id: 5, name: 'Core', roleId: 'core', minTenureDays: 730, minActivity: 3000, position: 5 },
+    { id: 6, name: 'Trusted', roleId: 'tr', minTenureDays: 1825, minActivity: 6000, position: 6 },
+  ];
+  const day = (n: number) => new Date(NOW.getTime() + n * DAY_MS);
+
+  /** Run the planner repeatedly the way the hourly sync would, applying its decisions. */
+  function simulate(opts: {
+    start: string;
+    tenureDays: number;
+    score: number;
+    floorTierId?: number | null;
+    days: number[];
+  }) {
+    let roles = [opts.start];
+    let below = new Map<number, Date>();
+    const history: string[] = [];
+    for (const d of opts.days) {
+      const p = planTiers({
+        tiers: LADDER,
+        roleIds: roles,
+        tenureDays: opts.tenureDays,
+        score: opts.score,
+        belowSince: below,
+        mode: 'highest_only',
+        demotion: true,
+        graceDays: 7,
+        floorTierId: opts.floorTierId ?? null,
+        now: day(d),
+      });
+      roles = [...roles.filter((r) => !p.remove.includes(r)), ...p.add];
+      below = p.belowSince;
+      history.push(roles.join(','));
+    }
+    return history;
+  }
+
+  it('steps an inactive Core member down one tier per grace period', () => {
+    const h = simulate({ start: 'core', tenureDays: 800, score: 0, days: [0, 6, 7, 13, 14, 21, 28, 35] });
+    // Grace starts day 0 → Veteran on day 7 (fresh grace) → Regular day 14 → Member day 21 → New Comer day 28.
+    expect(h).toEqual(['core', 'core', 'vet', 'vet', 'reg', 'mem', 'nc', 'nc']);
+  });
+
+  it('never drops below the floor for members who meet its tenure', () => {
+    const h = simulate({
+      start: 'core',
+      tenureDays: 800,
+      score: 0,
+      floorTierId: 2,
+      days: [0, 7, 14, 21, 28, 60],
+    });
+    expect(h).toEqual(['core', 'vet', 'reg', 'mem', 'mem', 'mem']);
+  });
+
+  it('places members at the floor even with no activity and no tier role', () => {
+    const p = planTiers({
+      tiers: LADDER,
+      roleIds: [],
+      tenureDays: 400,
+      score: 0,
+      belowSince: new Map(),
+      mode: 'highest_only',
+      demotion: true,
+      graceDays: 7,
+      floorTierId: 2,
+      now: NOW,
+    });
+    expect(p.add).toEqual(['mem']);
+  });
+
+  it('does not apply the floor to members short of its tenure requirement', () => {
+    const p = planTiers({
+      tiers: LADDER,
+      roleIds: [],
+      tenureDays: 10,
+      score: 0,
+      belowSince: new Map(),
+      mode: 'highest_only',
+      demotion: true,
+      graceDays: 7,
+      floorTierId: 2,
+      now: NOW,
+    });
+    expect(p.add).toEqual(['nc']);
+  });
+
+  it('stops stepping as soon as the member earns the tier again', () => {
+    const h = simulate({ start: 'core', tenureDays: 800, score: 1500, days: [0, 7, 14, 21] });
+    expect(h).toEqual(['core', 'vet', 'vet', 'vet']); // score 1500 earns Veteran
+  });
+
+  it('a held tier at or below the floor is never removed', () => {
+    const h = simulate({ start: 'mem', tenureDays: 400, score: 0, floorTierId: 2, days: [0, 30, 90] });
+    expect(h).toEqual(['mem', 'mem', 'mem']);
+  });
+
+  it('tenure placement still drops straight to the tenure tier', () => {
+    const p = planTiers({
+      tiers: LADDER,
+      roleIds: ['tr'],
+      tenureDays: 400,
+      score: Number.POSITIVE_INFINITY,
+      belowSince: new Map(),
+      mode: 'highest_only',
+      demotion: true,
+      graceDays: 0,
+      stepwise: false,
+      now: NOW,
+    });
+    expect(p).toMatchObject({ add: ['vet'], remove: ['tr'] });
+  });
+
+  it('/tiers settings sets and clears the floor', async () => {
+    const owner = t.guild.addMember({ userId: OWNER_ID });
+    const role = t.guild.addRole('Member', 5);
+    const member = t.services.tiers.add(ADMIN, {
+      name: 'Member',
+      roleId: role,
+      minTenureDays: 30,
+      minActivity: 60,
+    });
+    const run = (rawInput: Record<string, unknown>) =>
+      t.executor.run({
+        command: t.services.registry.find('tiers settings')!,
+        actor: makeActor(owner),
+        source: 'slash',
+        rawInput,
+      });
+    const set = await run({ floor: 'member' });
+    expect(set.result.content).toMatch(/Floor: Member/);
+    expect(t.services.settings.get().tiers.demotionFloorTierId).toBe(member.id);
+    await run({ floor: 'none' });
+    expect(t.services.settings.get().tiers.demotionFloorTierId).toBeNull();
+    expect((await run({ floor: 'nope' })).result.ok).toBe(false);
+  });
+
+  it('the service applies the configured floor during a regular sync', async () => {
+    const role = (name: string) => t.guild.addRole(name, 5);
+    t.services.tiers.add(ADMIN, {
+      name: 'New Comer',
+      roleId: role('New Comer'),
+      minTenureDays: 0,
+      minActivity: 0,
+    });
+    const member = t.services.tiers.add(ADMIN, {
+      name: 'Member',
+      roleId: role('Member'),
+      minTenureDays: 30,
+      minActivity: 60,
+    });
+    t.services.settings.update(ADMIN, 'test', (s) => {
+      s.tiers.demotionFloorTierId = member.id;
+    });
+    const m = t.guild.addMember({ joinedAt: new Date(NOW.getTime() - 400 * DAY_MS) });
+    t.services.members.recordJoin(m, m.joinedAt!);
+    await t.services.tiers.syncAll('test');
+    expect(m.roleIds).toContain(member.roleId); // no activity, but 400 days of tenure → floor
+  });
+});

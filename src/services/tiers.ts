@@ -35,6 +35,16 @@ export interface PlanInput {
   mode: 'highest_only' | 'stack';
   demotion: boolean;
   graceDays: number;
+  /**
+   * Step down one tier per grace period (the default, used by regular syncs). When false, a member
+   * drops straight to the tier they earn once the grace period ends (used by tenure placement).
+   */
+  stepwise?: boolean;
+  /**
+   * Floor tier: a member who meets this tier's tenure requirement is never placed below it, even
+   * without activity. null/undefined = no floor.
+   */
+  floorTierId?: number | null;
   now: Date;
 }
 
@@ -46,34 +56,59 @@ export interface PlanOutput {
   belowSince: Map<number, Date>;
 }
 
+const higher = (a: TierDef | undefined, b: TierDef | undefined) =>
+  !a ? b : !b ? a : a.position >= b.position ? a : b;
+
 /**
  * Decide which tier roles a member should gain or lose.
- * - A tier is earned when both thresholds are met.
- * - A held tier the member no longer qualifies for is kept when demotion is off, or while the
- *   demotion grace period runs; afterwards it is removed.
- * - highest_only keeps only the highest earned tier; stack keeps all of them.
+ * - A tier is earned when both thresholds are met. The floor tier (if set) counts as earned for
+ *   anyone who meets its tenure requirement.
+ * - Promotion goes straight to the highest earned tier.
+ * - When a member holds a tier above what they earn: with demotion off they keep it. With demotion
+ *   on they keep it for the grace period, then step down one tier (stepwise) and a fresh grace
+ *   period starts, until they reach what they earn. They never go below the floor.
+ * - highest_only keeps a single tier role; stack keeps every tier up to the top one that is
+ *   earned, already held, or the floor.
  */
 export function planTiers(input: PlanInput): PlanOutput {
   const sorted = [...input.tiers].sort((a, b) => a.position - b.position);
-  const effective: TierDef[] = [];
+  const isHeld = (t: TierDef) => input.roleIds.includes(t.roleId);
+  const isEarned = (t: TierDef) => qualifies(t, input.tenureDays, input.score);
+  const floor = sorted.find((t) => t.id === input.floorTierId && input.tenureDays >= t.minTenureDays);
+  const earnedTop = higher(sorted.filter(isEarned).at(-1), floor);
+  const heldTop = sorted.filter(isHeld).at(-1);
   const belowSince = new Map<number, Date>();
-  for (const t of sorted) {
-    const held = input.roleIds.includes(t.roleId);
-    if (qualifies(t, input.tenureDays, input.score)) {
-      effective.push(t);
-    } else if (held) {
-      if (!input.demotion) {
-        effective.push(t);
-        continue;
-      }
-      const since = input.belowSince.get(t.id) ?? input.now;
+
+  let top = earnedTop;
+  if (heldTop && (!earnedTop || heldTop.position > earnedTop.position)) {
+    // The member holds a tier above what they currently earn.
+    if (!input.demotion) {
+      top = heldTop;
+    } else {
+      const since = input.belowSince.get(heldTop.id) ?? input.now;
       if (input.now.getTime() - since.getTime() < input.graceDays * DAY_MS) {
-        effective.push(t);
-        belowSince.set(t.id, since);
+        top = heldTop;
+        belowSince.set(heldTop.id, since);
+      } else if (input.stepwise ?? true) {
+        top = higher(sorted[sorted.indexOf(heldTop) - 1], earnedTop);
+        // Still above what they earn: the next step down gets its own full grace period.
+        if (top && top !== earnedTop) belowSince.set(top.id, input.now);
       }
     }
   }
-  const target = input.mode === 'stack' ? effective : effective.slice(-1);
+
+  const target = !top
+    ? []
+    : input.mode === 'highest_only'
+      ? [top]
+      : sorted.filter(
+          (t) =>
+            t.position <= top.position &&
+            (t === top ||
+              t === floor ||
+              isEarned(t) ||
+              (isHeld(t) && (!input.demotion || (input.stepwise ?? true)))),
+        );
   const targetRoles = new Set(target.map((t) => t.roleId));
   const add = target.filter((t) => !input.roleIds.includes(t.roleId)).map((t) => t.roleId);
   const remove = sorted
@@ -392,6 +427,7 @@ export class TierService {
           mode: s.mode,
           demotion: true,
           graceDays: 0,
+          stepwise: false,
           now,
         })
       : planTiers({
@@ -403,6 +439,8 @@ export class TierService {
           mode: s.mode,
           demotion: s.demotion,
           graceDays: s.demotionGraceDays,
+          stepwise: true,
+          floorTierId: s.demotionFloorTierId,
           now,
         });
 

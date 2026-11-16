@@ -73,6 +73,11 @@ export const settingsSchema = z.object({
       mode: z.enum(['highest_only', 'stack']).default('highest_only'),
       demotion: z.boolean().default(true),
       demotionGraceDays: z.number().int().min(0).max(90).default(7),
+      /**
+       * Demotion never takes a member below this tier while they meet its tenure requirement
+       * (they're also placed in it without activity). null = no floor.
+       */
+      demotionFloorTierId: z.number().int().positive().nullable().default(null),
       excludedRoleIds: z.array(snowflake).max(50).default([]),
       syncIntervalMinutes: z.number().int().min(5).max(1440).default(60),
     })
