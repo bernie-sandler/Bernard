@@ -138,7 +138,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-The SQLite database lives in the `bernard-data` volume at `/data/bernard.db`. Health check: `GET /healthz`.
+The project's `./data` folder is mounted at `/data`, so the SQLite database is `./data/bernard.db` on the host. Health check: `GET /healthz`.
 
 The container starts as root only long enough to give `PUID:PGID` (default `1000:1000`) ownership of `/data`, then runs the app as that user with `UMASK`. On a bind mount, set them to the owner you want on the host, for example `PUID=99` and `PGID=100` on Unraid. Starting the container with `--user` skips this and runs as that user, so `/data` must already be writable by it.
 
@@ -152,11 +152,9 @@ Everything lives in one SQLite file. Take a consistent online backup with SQLite
 docker compose exec bernard node -e "require('better-sqlite3')('/data/bernard.db').backup('/data/backup.db').then(()=>console.log('ok'))"
 ```
 
-```bash
-docker compose cp bernard:/data/backup.db ./bernard-backup.db
-```
+The backup appears on the host at `./data/backup.db`.
 
-To restore: stop the container, copy the file back to `/data/bernard.db`, and start it again.
+To restore or move to another machine: stop the container, delete `bernard.db`, `bernard.db-wal` and `bernard.db-shm` from `./data`, copy the backup in as `./data/bernard.db`, and start it again. Copy a backup made this way rather than a live `bernard.db`, which can leave recent changes behind in the `-wal` file.
 
 ## Commands
 
