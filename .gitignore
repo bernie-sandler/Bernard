@@ -4,3 +4,6 @@ data/
 .env
 *.log
 coverage/
+
+.claude/
+CLAUDE.md
