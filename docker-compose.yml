@@ -6,13 +6,11 @@ services:
     restart: unless-stopped
     env_file: .env
     environment:
-      # Always keep the database on the mounted volume inside the container.
+      # Always keep the database on the mounted folder inside the container.
       DATABASE_PATH: /data/bernard.db
     ports:
       - "3000:3000"
     volumes:
-      - bernard-data:/data
+      # The project's ./data folder is the container's /data, so the database is a plain file on the host.
+      - ./data:/data
     stop_grace_period: 15s
-
-volumes:
-  bernard-data:
