@@ -149,7 +149,7 @@ Behind Nginx Proxy Manager or Cloudflare, set `PUBLIC_BASE_URL` to the public ht
 Everything lives in one SQLite file. Take a consistent online backup with SQLite's backup API:
 
 ```bash
-docker compose exec bernard node -e "require('better-sqlite3')('/data/bernard.db').backup('/data/backup.db').then(()=>console.log('ok'))"
+docker compose exec Bernard node -e "require('better-sqlite3')('/data/bernard.db').backup('/data/backup.db').then(()=>console.log('ok'))"
 ```
 
 The backup appears on the host at `./data/backup.db`.
