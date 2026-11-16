@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="shared/assets/logo.png" alt="Bernard logo" width="300">
+  <img src="shared/assets/logo.png" alt="Bernard logo" width="125">
 </p>
 
 <h1 align="center">Bernard</h1>
