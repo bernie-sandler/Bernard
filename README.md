@@ -1,8 +1,31 @@
-# bernard
+<p align="center">
+  <img src="shared/assets/logo.png" alt="Bernard logo" width="300">
+</p>
+
+<h1 align="center">Bernard</h1>
+
+<p align="center">
+  <strong>A self-hosted Discord bot and admin dashboard for your server.</strong><br>
+  <em>Thoughtful server management, without the bloat.</em>
+</p>
+
+<p align="center">
+  <img alt="Project status: In Development" src="https://img.shields.io/badge/status-In%20Development-3178C6">
+</p>
+
+<p align="center">
+  <img alt="Built with Node.js" src="https://img.shields.io/badge/Node.js-339933?logo=nodedotjs&logoColor=white">
+  <img alt="Built with TypeScript" src="https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white">
+  <img alt="Built with Discord.js" src="https://img.shields.io/badge/Discord.js-5865F2?logo=discord&logoColor=white">
+  <img alt="Built with SQLite" src="https://img.shields.io/badge/SQLite-003B57?logo=sqlite&logoColor=white">
+  <img alt="Built with Docker" src="https://img.shields.io/badge/Docker-2496ED?logo=docker&logoColor=white">
+</p>
+
+---
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-> **Status: Phase 2 of 7 (Moderation & Logs).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), `/userinfo`, `/serverinfo`, `/healthz` and Docker. Voice hubs, tiers and the dashboard arrive in later phases.
+> **Status: Phase 5 of 7 (Dashboard core).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs, tenure tracking with backfill, activity scoring, up to 10 tiers with scheduled sync and demotion, `/rank`, `/userinfo`, `/serverinfo`, and a web dashboard with Discord login and the Overview, Members, Moderation and Logs pages. The management pages (Command Runner, Permissions, Tiers, Voice Hubs, Settings, Audit Log) arrive in phase 6.
 
 ## Requirements
 
@@ -62,15 +85,17 @@ pnpm dev
 
 The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and migrations run on startup.
 
-| Script                      | What it does                                          |
-| --------------------------- | ----------------------------------------------------- |
-| `pnpm dev`                  | Run with hot reload (tsx)                             |
-| `pnpm build` / `pnpm start` | Compile to `dist/` and run                            |
-| `pnpm test`                 | Unit tests (vitest)                                   |
-| `pnpm typecheck`            | TypeScript, strict                                    |
-| `pnpm lint` / `pnpm format` | Biome                                                 |
-| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts` |
-| `pnpm invite-url`           | Print the bot invite URL and the required permissions |
+| Script                      | What it does                                                 |
+| --------------------------- | ------------------------------------------------------------ |
+| `pnpm dev`                  | Run with hot reload (tsx)                                    |
+| `pnpm dev:web`              | Dashboard dev server with hot reload (port 5173)             |
+| `pnpm build` / `pnpm start` | Compile the server and dashboard to `dist/` and run          |
+| `pnpm demo`                 | Dashboard demo with fake data, no Discord needed (port 3100) |
+| `pnpm test`                 | Unit tests (vitest)                                          |
+| `pnpm typecheck`            | TypeScript, strict                                           |
+| `pnpm lint` / `pnpm format` | Biome                                                        |
+| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts`        |
+| `pnpm invite-url`           | Print the bot invite URL and the required permissions        |
 
 ## Environment variables
 
@@ -122,23 +147,23 @@ To restore: stop the container, copy the file back to `/data/bernard.db`, and st
 
 ## Commands
 
-| Command | Node | Notes |
-|---|---|---|
-| `/help`, `/ping`, `/userinfo [user]`, `/serverinfo` | `public:*` | Open to everyone by default. `/help` lists only commands you can use. |
-| `/permset`, `/permunset`, `/permlist`, `/permcheck` | `config:perm*` | Manage the permission rules. |
-| `/ban user [reason] [duration] [delete_days]` | `admin:ban` | With `duration` (e.g. `7d`, max 365d) it's a temporary ban, lifted automatically. |
-| `/unban`, `/kick` | `admin:unban`, `admin:kick` | |
-| `/timeout user duration [reason]`, `/untimeout` | `admin:timeout`, `admin:untimeout` | Max 28 days (a Discord limit). Members with Administrator can't be timed out. |
-| `/warn user reason` | `admin:warn` | |
-| `/warnings list user`, `/warnings remove case` | `admin:warnings` | Removing a warning keeps it in history and marks it removed. |
-| `/purge amount [user] [channel]` | `admin:purge` | 1-100 messages. With `user` it scans up to 500 recent messages. Skips pinned messages and anything older than 14 days, and reports both. |
-| `/slowmode seconds [channel]` | `admin:slowmode` | 0 turns it off. |
-| `/lock [channel]`, `/unlock [channel]` | `admin:lock`, `admin:unlock` | Lock denies sending for @everyone. Unlock restores the previous overwrite. |
-| `/role add`, `/role remove` | `admin:role` | Refuses roles at or above the bot's or your highest role, plus managed roles. |
-| `/nick user [nickname]` | `admin:nick` | Leave `nickname` empty to reset it. |
-| `/announce channel message [embed] [title]` | `admin:announce` | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does. |
-| `/case id` | `admin:case` | |
-| `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs` | |
+| Command                                                    | Node                               | Notes                                                                                                                                    |
+| ---------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `/help`, `/ping`, `/userinfo [user]`, `/serverinfo`        | `public:*`                         | Open to everyone by default. `/help` lists only commands you can use.                                                                    |
+| `/permset`, `/permunset`, `/permlist`, `/permcheck`        | `config:perm*`                     | Manage the permission rules.                                                                                                             |
+| `/ban user [reason] [duration] [delete_days]`              | `admin:ban`                        | With `duration` (e.g. `7d`, max 365d) it's a temporary ban, lifted automatically.                                                        |
+| `/unban`, `/kick`                                          | `admin:unban`, `admin:kick`        |                                                                                                                                          |
+| `/timeout user duration [reason]`, `/untimeout`            | `admin:timeout`, `admin:untimeout` | Max 28 days (a Discord limit). Members with Administrator can't be timed out.                                                            |
+| `/warn user reason`                                        | `admin:warn`                       |                                                                                                                                          |
+| `/warnings list user`, `/warnings remove case`             | `admin:warnings`                   | Removing a warning keeps it in history and marks it removed.                                                                             |
+| `/purge amount [user] [channel]`                           | `admin:purge`                      | 1-100 messages. With `user` it scans up to 500 recent messages. Skips pinned messages and anything older than 14 days, and reports both. |
+| `/slowmode seconds [channel]`                              | `admin:slowmode`                   | 0 turns it off.                                                                                                                          |
+| `/lock [channel]`, `/unlock [channel]`                     | `admin:lock`, `admin:unlock`       | Lock denies sending for @everyone. Unlock restores the previous overwrite.                                                               |
+| `/role add`, `/role remove`                                | `admin:role`                       | Refuses roles at or above the bot's or your highest role, plus managed roles.                                                            |
+| `/nick user [nickname]`                                    | `admin:nick`                       | Leave `nickname` empty to reset it.                                                                                                      |
+| `/announce channel message [embed] [title]`                | `admin:announce`                   | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does.                                          |
+| `/case id`                                                 | `admin:case`                       |                                                                                                                                          |
+| `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs`                      |                                                                                                                                          |
 
 Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlock`) require a channel when run from the dashboard.
 
@@ -152,19 +177,156 @@ Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlo
 
 ## Logs
 
-| Type | Events |
-|---|---|
-| `moderation` | Every mod case, warning removals |
-| `members` | Joins (with account age and a new-account warning), leaves, nickname changes |
-| `messages` | Edits (before/after), deletes (content, attachment names), bulk deletes |
-| `voice` | Joins, leaves and moves |
-| `server` | Role and channel create/delete/update, member role changes |
-| `commands` | Every command use: who, what, arguments, allowed/denied, slash or dashboard |
+| Type         | Events                                                                       |
+| ------------ | ---------------------------------------------------------------------------- |
+| `moderation` | Every mod case, warning removals                                             |
+| `members`    | Joins (with account age and a new-account warning), leaves, nickname changes |
+| `messages`   | Edits (before/after), deletes (content, attachment names), bulk deletes      |
+| `voice`      | Joins, leaves and moves                                                      |
+| `server`     | Role and channel create/delete/update, member role changes                   |
+| `commands`   | Every command use: who, what, arguments, allowed/denied, slash or dashboard  |
 
 - `/logs set` posts a test message first and refuses channels the bot can't write to.
 - Entries are always **stored in the database**, even for types not routed to a channel, so the dashboard can search them. Stored entries are pruned after `retentionDays` (default 30), checked daily at 03:30 and at startup.
 - Message content for edit/delete logs comes from a **bounded in-memory cache** (default 5000 messages, set with `/logs config cache_size`). Edits and deletes of messages sent before the bot started, or already evicted, are logged as "not cached". Discord doesn't report who deleted a message, so delete logs don't include that.
 - Events in log channels themselves are ignored, and bot messages aren't logged.
+- Create, delete and update events for temporary voice channels are left out of the `server` log. Joins, leaves and moves still appear in the `voice` log.
+
+## Join-to-create voice
+
+Members join a **hub** voice channel. The bot then creates a channel for them in the hub's category, makes them the owner and moves them in.
+
+```
+/voice hub add channel:#➕-join type:public category:#Temp Voice name_template:{user}'s Channel
+/voice hub add channel:#🔒-private type:private category:#Temp Voice hide:false
+/voice settings grace_seconds:10 cooldown_seconds:30 owner_leave:transfer
+```
+
+- **Public** hubs create channels anyone can join. **Private** hubs deny Connect for @everyone, and the channel stays visible unless `hide:true`. The owner, and anyone they `/vc invite`, can connect.
+- Name templates support `{user}` (display name), `{username}` and `{count}` (the channel's number for that hub).
+- An empty channel is deleted after `grace_seconds` (default 10). A reconnect within that window keeps it.
+- When the owner leaves a channel that still has people in it:
+  - with `owner_leave:transfer` (the default), the longest-present member becomes owner;
+  - with `owner_leave:claim`, anyone inside can `/vc claim` it.
+- **Abuse protection:** each member can create one channel per `cooldown_seconds` (default 30). Someone on cooldown is disconnected from the hub with a short notice in the hub's text chat, which deletes itself after 10 seconds.
+- **On startup** the bot deletes empty tracked channels, forgets channels that no longer exist, fixes owners who left while it was offline, and creates channels for anyone already waiting in a hub. A restart leaves no orphan channels.
+- If a hub channel is deleted, its hub configuration is removed too. Temporary channels count towards Discord's limit of 50 channels per category. When a category is full, the member gets a notice instead of a channel.
+
+| Owner command            | Node                         | What it does                                                                                                 |
+| ------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `/vc lock`, `/vc unlock` | `voice:lock`, `voice:unlock` | Deny or allow Connect for @everyone. People already inside can still reconnect after a lock.                 |
+| `/vc limit limit`        | `voice:limit`                | User limit, 0-99 (0 = unlimited).                                                                            |
+| `/vc rename name`        | `voice:rename`               | Discord allows 2 renames per channel per 10 minutes. A blocked rename replies with how many minutes to wait. |
+| `/vc invite user`        | `voice:invite`               | Allow a member to connect even when the channel is locked or private.                                        |
+| `/vc kick user`          | `voice:kick`                 | Disconnect a member and block them from rejoining.                                                           |
+| `/vc transfer user`      | `voice:transfer`             | Give ownership to someone in the channel.                                                                    |
+| `/vc claim`              | `voice:claim`                | Take over a channel whose owner left.                                                                        |
+
+`voice:*` is allowed for @everyone by default, but these commands only work for the owner of the temporary channel you're in. `/voice ...` needs `config:voice`.
+
+## Tenure, activity and tiers
+
+### Tenure
+
+- **Tenure** is the number of days since the member joined.
+- **Backfill:** at every startup the bot syncs the member list. New members are backfilled from Discord's join date, and anyone who left while the bot was offline is marked as gone.
+- **First join:** Discord only reports the most recent join, so the first join from before the bot arrived can't be recovered. From then on, the bot keeps the earliest join it has seen.
+- **Rejoins:** when someone leaves and rejoins, tenure restarts by default. Use `/activity settings reset_tenure_on_rejoin:false` to keep it. A newer join date seen at startup counts as a rejoin.
+
+### Activity
+
+- **No message content is stored.** The score is built from two numbers kept per member per day: messages that earned a point, and voice minutes.
+- **Messages:** 1 point per message, at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points.
+- **Voice:** points per minute in voice (default 1).
+  - AFK-channel time doesn't count, nor does time with no other human in the channel (bots don't count as company).
+  - Self-deafened time doesn't count by default. Change this with `count_deafened`.
+- **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too.
+- **History:** daily rows are kept for 400 days, for the dashboard charts.
+
+```
+/activity settings message_cooldown:60 points_per_message:1 points_per_voice_minute:1 window_days:30
+```
+
+### Tiers
+
+You can have up to 10 tiers. Each has a name, a role, a minimum tenure in days and a minimum activity score over the window. A member earns a tier when they meet **both** thresholds. Set either one to 0 to make a tenure-only or activity-only tier.
+
+```
+/tiers add name:Newcomer role:@Newcomer min_tenure_days:0 min_activity:0
+/tiers add name:Regular role:@Regular min_tenure_days:30 min_activity:100
+/tiers add name:Veteran role:@Veteran min_tenure_days:365 min_activity:0
+/tiers settings mode:highest_only demotion:true grace_days:7 sync_minutes:60
+/tiers exclude role:@Staff
+/tiers check
+/tiers sync
+```
+
+| Command                                      | Node              | What it does                                                                                                                                                                                                                                    |
+| -------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/tiers list`                                | `config:tiers`    | Tiers, member counts, settings, last sync and any problems                                                                                                                                                                                      |
+| `/tiers add`, `/tiers edit`, `/tiers remove` | `config:tiers`    | Manage tiers. Position 1 is the lowest.                                                                                                                                                                                                         |
+| `/tiers check`                               | `config:tiers`    | Checks that tier roles exist, aren't managed, and sit below the bot's highest role. Also warns when a higher tier is no harder to reach than the one below it.                                                                                  |
+| `/tiers sync`                                | `config:tiers`    | Re-evaluate every member now                                                                                                                                                                                                                    |
+| `/tiers tenure-sync [preview]`               | `config:tiers`    | One-off placement by tenure alone. Ignores activity requirements and puts every member exactly in the tier their tenure earns, adding and removing tier roles (including higher ones they hold but haven't earned). `preview:true` lists how many members would gain or lose each tier without changing anything. Doesn't affect the regular sync schedule. Useful right after install, before activity history exists. |
+| `/tiers settings`, `/tiers exclude`          | `config:tiers`    | Mode, demotion and grace period, sync interval, excluded roles                                                                                                                                                                                  |
+| `/activity settings`                         | `config:activity` | Scoring weights, cooldown, window, tenure reset on rejoin                                                                                                                                                                                       |
+| `/rank [user]`                               | `public:rank`     | Tenure, activity score and breakdown, leaderboard position, current tier and what's needed for the next one. The reply is public.                                                                                                               |
+
+- **Mode:** `highest_only` (the default) keeps just the highest earned tier role and removes lower ones. `stack` keeps every earned tier role.
+- **Demotion** is on by default. A member who falls below a tier they hold keeps it for `grace_days` (default 7) before losing it. With demotion off, held tiers are never removed.
+- **Excluded roles** (for example staff, or bots, which are always skipped) are left alone.
+- **When tiers are evaluated:**
+  - everyone, every `sync_minutes` (default 60);
+  - a single member, a few seconds after their score crosses a tier threshold, and when they join (so a tier with 0 tenure and 0 activity applies straight away);
+  - everyone, on demand with `/tiers sync`.
+- Tier changes are posted to the `members` log.
+- **The bot's role must sit above every tier role.** Tier roles it can't manage are skipped and reported by `/tiers check`, `/tiers list` and a warning at startup.
+
+## Web dashboard
+
+The dashboard is served by the same process on `PORT` (default 3000). Members sign in with Discord (`identify` scope only). The bot then checks that they're in the server and that their roles grant `dashboard:access`.
+
+### Setup
+
+1. In the Developer Portal → **OAuth2**, copy the Client Secret into `DISCORD_CLIENT_SECRET`. Then add the redirect `${PUBLIC_BASE_URL}/api/auth/callback`, for example `https://bot.example.com/api/auth/callback`.
+2. Set `SESSION_SECRET` to 32+ random characters (`openssl rand -hex 32`).
+3. Grant access, for example `/permset node:dashboard:access role:@Mod value:true`. The owner, and Administrators while admin bypass is on, always have access.
+
+### What each page needs
+
+| Page                                                   | Node(s)                                                                                                                                                                                |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Overview, Members, member detail                       | `dashboard:access`                                                                                                                                                                     |
+| Member actions (warn, timeout, kick, ban, roles)       | The same node as the slash command: `admin:warn`, `admin:timeout`, `admin:untimeout`, `admin:kick`, `admin:ban`, `admin:role`. Buttons only appear for actions you're allowed to take. |
+| Moderation (all cases) and the history on member pages | `admin:case` (same as `/case`)                                                                                                                                                         |
+| Warning counts                                         | `admin:warnings`                                                                                                                                                                       |
+| Logs                                                   | `dashboard:logs` (deleted message content shows up here, so it has its own node, denied by default)                                                                                    |
+
+Permissions are re-checked on **every request**, so removing someone's role takes effect immediately, without waiting for their session to expire. Dashboard actions call the same services as the slash commands. They create mod cases with `source = dashboard`, and each one is also recorded in the audit log.
+
+### Security
+
+- **Sessions** are stored server-side in SQLite, and only a SHA-256 of the session ID is kept. The cookie is signed, `httpOnly` and `SameSite=Lax`, and `Secure` when `PUBLIC_BASE_URL` is https. Sessions last `SESSION_TTL_HOURS` (default 7 days) and expired ones are cleaned up hourly.
+- **CSRF:** every state-changing request needs the per-session `X-CSRF-Token` header. A request whose `Origin` doesn't match `PUBLIC_BASE_URL` is rejected.
+- **OAuth:** the flow uses a signed, short-lived `state` cookie. The Discord access token is used once to identify the user and then revoked.
+- **Headers:** a strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, and HSTS behind https.
+- **Rate limits:** 300 requests per minute per IP, and 20 per minute on the login endpoints.
+
+### Reverse proxy (Nginx Proxy Manager / Cloudflare)
+
+- Set `PUBLIC_BASE_URL` to the public https URL and `TRUST_PROXY=1` (one proxy hop), or to your proxy's IP or CIDR. Behind Cloudflare plus Nginx Proxy Manager, use `TRUST_PROXY=2`.
+- Proxy everything (`/`, `/api`, `/healthz`) to the container's port 3000. No WebSocket configuration is needed.
+
+### Development
+
+Run the bot and API with `pnpm dev`, and the dashboard with hot reload with `pnpm dev:web`. Open <http://localhost:5173>. Set `PUBLIC_BASE_URL=http://localhost:5173` and add `http://localhost:5173/api/auth/callback` as a redirect in the Developer Portal, so login and the same-origin checks go through Vite's proxy.
+
+To look around without a bot, run `pnpm build:web && pnpm demo` and open <http://localhost:3100>. This runs the real API and dashboard against in-memory fake data, and "Log in with Discord" signs you straight in as the owner.
+
+### Notes
+
+- The **online count** is Discord's approximate presence count. It's fetched without the privileged Presence intent and cached for a minute.
+- The joins and leaves chart uses the stored `members` log, so it covers at most `retentionDays` (30 days).
 
 ## Permissions model
 
