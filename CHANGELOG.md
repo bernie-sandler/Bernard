@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-11-16
+
 ### Fixed
 
 - Bot failing to start with `LOG_PRETTY=true` in the Docker image (`unable to determine transport target for "pino-pretty"`). `pino-pretty` was a dev-only dependency and was pruned from the production image; it is now a runtime dependency, and if it is ever missing the bot logs a warning and falls back to JSON logs instead of crashing.
@@ -98,7 +100,8 @@ First release. A self-hosted Discord bot and admin dashboard for one private ser
 - Tag-driven releases: pushing `vX.Y.Z` publishes a multi-arch (amd64/arm64) image to GHCR and creates a GitHub release.
 - Weekly grouped Dependabot updates, with patch and minor updates auto-merged once checks pass.
 
-[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bernie-sandler/bernard/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/bernie-sandler/bernard/releases/tag/v0.1.0
