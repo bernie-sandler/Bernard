@@ -62,6 +62,16 @@ export class SessionService {
     return row;
   }
 
+  /** Whether a session (by its stored hash) still exists and hasn't expired. */
+  isActive(idHash: string, now = Date.now()): boolean {
+    const row = this.db
+      .select({ expiresAt: sessions.expiresAt })
+      .from(sessions)
+      .where(eq(sessions.idHash, idHash))
+      .get();
+    return Boolean(row && row.expiresAt.getTime() > now);
+  }
+
   destroy(rawId: string): void {
     this.db
       .delete(sessions)

@@ -10,6 +10,7 @@ import type { Container } from '../services/container.js';
 import { DashboardService, type JobInfo } from '../services/dashboard.js';
 import { createAuth } from './auth.js';
 import { errorHandler } from './http.js';
+import { type LiveOptions, registerLiveRoutes } from './live.js';
 import { registerManagementRoutes } from './manage.js';
 import { DiscordOAuthClient, type OAuthClient } from './oauth.js';
 import { registerDashboardRoutes } from './routes.js';
@@ -25,6 +26,8 @@ export interface ApiDeps {
   jobs?: () => JobInfo[];
   /** Directory with the built dashboard (default dist/web). */
   webRoot?: string;
+  /** Live update stream tuning (tests). */
+  live?: LiveOptions;
 }
 
 const CSP = [
@@ -87,6 +90,9 @@ export async function createApiServer(deps: ApiDeps) {
   const dashboard = new DashboardService(services, deps.jobs);
 
   auth.registerPublicRoutes(app);
+  let closeLiveStreams = () => {};
+  // Open event streams would keep the server from shutting down, so end them first.
+  app.addHook('preClose', async () => closeLiveStreams());
   await app.register(
     async (api) => {
       api.addHook('preHandler', auth.authenticate);
@@ -94,6 +100,7 @@ export async function createApiServer(deps: ApiDeps) {
       auth.registerMe(api);
       registerDashboardRoutes(api, services, dashboard);
       registerManagementRoutes(api, services, dashboard, container.executor);
+      closeLiveStreams = registerLiveRoutes(api, services, deps.live);
     },
     { prefix: '/api' },
   );

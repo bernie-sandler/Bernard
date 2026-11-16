@@ -12,7 +12,7 @@ export function OverviewPage() {
   const q = useQuery({
     queryKey: ['overview'],
     queryFn: () => api<OverviewResponse>('/overview'),
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
   });
   if (q.isPending) return <FullPageSpinner />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;

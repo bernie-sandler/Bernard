@@ -31,7 +31,14 @@ export class Scheduler {
       lastError: null,
       nextRunAt: null,
     };
+    // croner's `protect` only covers scheduled runs, not manual trigger(), so guard here too.
+    let running = false;
     const run = async () => {
+      if (running) {
+        this.logger.debug({ job: name }, 'Job still running; skipped');
+        return;
+      }
+      running = true;
       const started = Date.now();
       status.lastRunAt = new Date(started);
       try {
@@ -43,6 +50,7 @@ export class Scheduler {
         this.logger.error({ err, job: name }, 'Job failed');
       } finally {
         status.lastDurationMs = Date.now() - started;
+        running = false;
       }
     };
     const cron = new Cron(pattern, { protect: true, name }, run);

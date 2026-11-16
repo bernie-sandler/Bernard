@@ -8,6 +8,7 @@ import type { AuditActor, AuditService } from './audit.js';
 import type { BotStateStore } from './botState.js';
 import { UserError } from './errors.js';
 import type { EventLogService } from './eventLog.js';
+import type { LiveEvents } from './liveEvents.js';
 import { DAY_MS, type MemberService, tenureDays } from './members.js';
 import type { SettingsService } from './settings.js';
 
@@ -151,6 +152,7 @@ export interface TierDeps {
   members: MemberService;
   state: BotStateStore;
   logger: Logger;
+  live?: LiveEvents;
   now?: () => number;
 }
 
@@ -534,6 +536,7 @@ export class TierService {
     if (opts.dryRun) return summary;
     // A tenure-only sync is a one-off; it must not postpone the next regular sync.
     this.d.state.set(opts.tenureOnly ? 'last_tenure_sync' : 'last_tier_sync', JSON.stringify(summary));
+    this.d.live?.publish('tiers');
     this.d.logger.info(summary, 'Tier sync finished');
     return summary;
   }

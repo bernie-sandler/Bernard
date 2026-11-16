@@ -213,6 +213,31 @@ const temp = voice.created[0]!.id;
 voice.states.set(memberIds[4]!, temp);
 voice.states.set(memberIds[6]!, temp);
 
+// Something to watch for live updates: one member hops in and out of the channel every 15s.
+const hopper = memberIds[8]!;
+setInterval(() => {
+  const inside = voice.states.get(hopper) === temp;
+  if (inside) voice.states.delete(hopper);
+  else voice.states.set(hopper, temp);
+  void services.voice
+    .handleVoiceStateUpdate({
+      userId: hopper,
+      displayName: guild.members.get(hopper)!.displayName,
+      username: 'hopper',
+      isBot: false,
+      from: inside ? temp : null,
+      to: inside ? null : temp,
+    })
+    .then(() =>
+      services.eventLog.voiceChanged({
+        userId: hopper,
+        tag: 'hopper',
+        from: inside ? temp : null,
+        to: inside ? null : temp,
+      }),
+    );
+}, 15_000).unref();
+
 // ── Server ──────────────────────────────────────────────────────────────────
 /** Demo login: skip Discord and sign in as the owner. */
 const demoOAuth: OAuthClient = {

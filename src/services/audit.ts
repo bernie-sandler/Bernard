@@ -1,6 +1,7 @@
 import { and, desc, eq, like, lt, type SQL } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { auditLog } from '../db/schema.js';
+import { type LiveEvents, topicForAudit } from './liveEvents.js';
 
 export interface AuditActor {
   id: string;
@@ -19,6 +20,7 @@ export class AuditService {
   constructor(
     private readonly db: Db,
     private readonly guildId: string,
+    private readonly live?: LiveEvents,
   ) {}
 
   record(actor: AuditActor, entry: AuditEntry): void {
@@ -35,6 +37,8 @@ export class AuditService {
         createdAt: new Date(),
       })
       .run();
+    const topic = topicForAudit(entry.action);
+    if (topic) this.live?.publish(topic);
   }
 
   list(

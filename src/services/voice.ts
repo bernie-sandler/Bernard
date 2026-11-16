@@ -5,6 +5,7 @@ import type { GuildPort, VoicePort } from '../discord/ports.js';
 import type { Logger } from '../logger.js';
 import type { AuditActor, AuditService } from './audit.js';
 import { UserError } from './errors.js';
+import type { LiveEvents } from './liveEvents.js';
 import type { SettingsService } from './settings.js';
 
 export type Hub = typeof voiceHubs.$inferSelect;
@@ -56,6 +57,7 @@ export interface VoiceDeps {
   settings: SettingsService;
   audit: AuditService;
   logger: Logger;
+  live?: LiveEvents;
   now?: () => number;
 }
 
@@ -301,6 +303,7 @@ export class VoiceService {
           createdAt: new Date(now),
         })
         .run();
+      this.d.live?.publish('tempVoice');
 
       try {
         await voice.moveMember(e.userId, channelId);
@@ -406,6 +409,7 @@ export class VoiceService {
       .delete(tempChannels)
       .where(and(eq(tempChannels.guildId, this.d.guildId), eq(tempChannels.channelId, channelId)))
       .run();
+    this.d.live?.publish('tempVoice');
   }
 
   /** A channel was deleted outside the bot (or by it). Clean up records. */
@@ -479,10 +483,12 @@ export class VoiceService {
 
   private saveOccupants(channelId: string, occupants: TempChannel['occupants']): void {
     this.d.db.update(tempChannels).set({ occupants }).where(eq(tempChannels.channelId, channelId)).run();
+    this.d.live?.publish('tempVoice');
   }
 
   private setOwnerId(channelId: string, ownerId: string | null): void {
     this.d.db.update(tempChannels).set({ ownerId }).where(eq(tempChannels.channelId, channelId)).run();
+    this.d.live?.publish('tempVoice');
   }
 
   private async setOwner(channelId: string, userId: string): Promise<void> {

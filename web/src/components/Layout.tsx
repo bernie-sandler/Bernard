@@ -1,6 +1,7 @@
 import { Suspense, useState } from 'react';
 import { NavLink, Outlet } from 'react-router';
 import { useAuth } from '../auth.js';
+import { type LiveStatus, useLiveUpdates } from '../live.js';
 import { Avatar, Button, cx, FullPageSpinner } from './ui.js';
 
 interface NavItem {
@@ -68,8 +69,29 @@ function Icon({ d }: { d: string }) {
   );
 }
 
+const LIVE_LABELS: Record<LiveStatus, { text: string; dot: string; title: string }> = {
+  live: { text: 'Live', dot: 'bg-emerald-400', title: 'Updates appear as they happen' },
+  connecting: {
+    text: 'Reconnecting…',
+    dot: 'bg-amber-400 animate-pulse',
+    title: 'Trying to reconnect for live updates',
+  },
+  offline: { text: 'Offline: reload for updates', dot: 'bg-slate-500', title: 'Live updates stopped' },
+};
+
+function LiveBadge({ status }: { status: LiveStatus }) {
+  const l = LIVE_LABELS[status];
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-slate-500" title={l.title} aria-live="polite">
+      <span className={cx('size-1.5 rounded-full', l.dot)} aria-hidden />
+      {l.text}
+    </div>
+  );
+}
+
 export function Layout() {
   const { me, can, logout } = useAuth();
+  const live = useLiveUpdates();
   const [open, setOpen] = useState(false);
   const items = NAV.filter((n) => !n.nodes || n.nodes.some(can));
 
@@ -111,7 +133,7 @@ export function Layout() {
         <Avatar url={me.guild.iconUrl} name={me.guild.name} size={36} />
         <div className="min-w-0">
           <div className="truncate text-sm font-semibold text-slate-50">{me.guild.name}</div>
-          <div className="text-xs text-slate-500">Bernard dashboard</div>
+          <LiveBadge status={live} />
         </div>
       </div>
       {nav}

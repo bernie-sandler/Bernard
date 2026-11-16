@@ -5,6 +5,7 @@ import { logs } from '../db/schema.js';
 import type { MessengerPort } from '../discord/ports.js';
 import type { Logger } from '../logger.js';
 import { COLORS, type ResultEmbed } from '../shared/commandResult.js';
+import type { LiveEvents } from './liveEvents.js';
 import type { SettingsService } from './settings.js';
 
 export interface LogEntryInput {
@@ -27,6 +28,7 @@ export class LogService {
     private readonly settings: SettingsService,
     private readonly messenger: MessengerPort,
     private readonly logger: Logger,
+    private readonly live?: LiveEvents,
   ) {}
 
   /** Store the entry and post it. Resolves with the posted message ID (null if not posted). */
@@ -53,6 +55,7 @@ export class LogService {
         'Failed to store log entry',
       );
     }
+    this.live?.publish(entry.type);
 
     const channelId = this.settings.get().logs.channels[entry.type];
     if (!channelId) return { messageId: null };

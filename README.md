@@ -25,7 +25,14 @@
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-> **Status: Phase 6 of 7 (Dashboard management).** Working now: config validation, the database and migrations, the custom permission system, all moderation commands with mod cases, temporary bans, recording of bans/kicks/timeouts done in Discord itself, all six log types (routed to channels and stored in the database with retention), join-to-create voice hubs, tenure tracking with backfill, activity scoring, up to 10 tiers with scheduled sync and demotion, `/rank`, `/userinfo`, `/serverinfo`, and a web dashboard with Discord login: Overview, Members, Moderation, Logs, Command Runner, Permissions, Tiers, Voice hubs, Settings and Audit log. Phase 7 adds real-time updates and polish.
+**What it does**
+
+- **Permissions:** a role-based permission system layered on Discord, with wildcards (`admin:*`, `*`) and a `/permcheck` that shows which rule decided.
+- **Moderation:** ban (including temporary bans), kick, timeout, warn, purge, slowmode, lock, roles, nicknames and announcements. Every action becomes a numbered mod case, including bans and kicks done in Discord's own UI.
+- **Logs:** moderation, members, messages, voice, server and commands, each routed to its own channel and stored for searching.
+- **Join-to-create voice:** public or private hubs, owner commands, and startup clean-up so a restart never leaves orphan channels.
+- **Tenure and activity tiers:** up to 10 tiers that need both days in the server and recent activity, with stacking or highest-only modes and step-by-step demotion down to a floor.
+- **Web dashboard:** Discord login, gated by the same permission nodes as the commands, with live updates. Pages: Overview, Members, Moderation, Logs, Command Runner, Permissions, Tiers, Voice hubs, Settings and Audit log.
 
 ## Requirements
 
@@ -92,6 +99,7 @@ The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and mig
 | `pnpm build` / `pnpm start` | Compile the server and dashboard to `dist/` and run          |
 | `pnpm demo`                 | Dashboard demo with fake data, no Discord needed (port 3100) |
 | `pnpm test`                 | Unit tests (vitest)                                          |
+| `pnpm test:coverage`        | Tests with a coverage report (`coverage/index.html`)         |
 | `pnpm typecheck`            | TypeScript, strict                                           |
 | `pnpm lint` / `pnpm format` | Biome                                                        |
 | `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts`        |
@@ -329,6 +337,15 @@ Permissions are re-checked on **every request**, so removing someone's role take
 
 - Set `PUBLIC_BASE_URL` to the public https URL and `TRUST_PROXY=1` (one proxy hop), or to your proxy's IP or CIDR. Behind Cloudflare plus Nginx Proxy Manager, use `TRUST_PROXY=2`.
 - Proxy everything (`/`, `/api`, `/healthz`) to the container's port 3000. No WebSocket configuration is needed.
+- Live updates use a long-lived HTTP response (Server-Sent Events). The bot sends `X-Accel-Buffering: no`, so Nginx Proxy Manager streams it without extra config. A heartbeat every 25 seconds keeps Cloudflare's idle timeout from cutting it off.
+
+### Live updates
+
+The dashboard keeps one event stream open per tab (`GET /api/events`). When something changes, the stream tells the dashboard which area changed, and the affected pages refetch through the normal permission-checked API. Changes include a member joining, a new mod case, someone entering a temporary voice channel, a tier sync, or a settings or permission edit. The stream itself never carries data, so it can't leak anything a page wouldn't show.
+
+- The sidebar shows **Live**, **Reconnecting…** or **Offline**. After a reconnect the dashboard refreshes everything, in case it missed changes.
+- The stream re-checks the session and `dashboard:access` with every heartbeat and closes once either is gone. Each user can have up to 10 open tabs.
+- The Overview still refreshes once a minute for latency and uptime, which don't generate events.
 
 ### Development
 
@@ -380,7 +397,47 @@ Slash commands register without `default_member_permissions`, so Discord shows e
 3. Put the real logic in a service under `src/services/`, so the dashboard can call the same function.
 4. Restart. Commands re-register automatically when their definitions change.
 
-The same definition drives the Discord registration JSON, the zod input validation and (from Phase 6) the dashboard Command Runner form. Both entry points go through `CommandExecutor`, which checks the permission, validates the input, runs the command and writes the `commands` log.
+The same definition drives the Discord registration JSON, the zod input validation and the dashboard Command Runner form, so a new command shows up in the Command Runner with no extra work. Both entry points go through `CommandExecutor`, which checks the permission, validates the input, runs the command and writes the `commands` log. If the command changes configuration, record it with `services.audit` so it appears in the Audit log and triggers live updates.
+
+## Testing
+
+```bash
+pnpm test
+```
+
+```bash
+pnpm test:coverage
+```
+
+- The tests use in-memory SQLite and fake Discord ports (`tests/helpers.ts`), so they need no bot token.
+- **What's covered:**
+  - the permission resolver (every precedence case);
+  - tier qualification, demotion and the floor;
+  - activity cooldowns and voice-minute rules;
+  - the temporary voice channel lifecycle and startup reconcile;
+  - moderation guards, purge and temporary bans;
+  - log routing;
+  - the OAuth flow, sessions, CSRF and per-route permission gates;
+  - every dashboard endpoint;
+  - the live event stream;
+  - the job scheduler.
+- `pnpm test:coverage` measures our own code and leaves out thin discord.js glue (adapters, gateway event handlers, startup wiring), which only a live gateway can exercise. An HTML report is written to `coverage/`.
+- `pnpm demo` serves the real dashboard and API on fake data for hands-on checks.
+
+## Troubleshooting
+
+| Symptom                                                   | Fix                                                                                                                                                                                      |
+| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Startup says "Invalid environment configuration"          | Every problem is listed. Compare your `.env` with `.env.example`.                                                                                                                        |
+| "Discord refused the privileged intents"                  | Developer Portal → Bot → enable **Server Members Intent** and **Message Content Intent**.                                                                                                |
+| "The bot is not in GUILD_ID"                              | Invite it with `pnpm invite-url`, which is also printed in the log. Check that `GUILD_ID` is your server's ID.                                                                           |
+| "I'm missing a Discord permission…" or tier roles skipped | Move the bot's role above every role it manages. `/tiers check` lists the problem roles.                                                                                                 |
+| Admin commands say "You don't have permission"            | Only the owner (and Administrators with admin bypass) can use them until you `/permset`. Use `/permcheck` to see which rule decided.                                                     |
+| Dashboard login loops back to the login page              | `PUBLIC_BASE_URL` must be exactly the URL in your browser, and the Developer Portal redirect must be `${PUBLIC_BASE_URL}/api/auth/callback`. Over plain http, set `COOKIE_SECURE=false`. |
+| Dashboard says "Cross-origin request blocked"             | `PUBLIC_BASE_URL` doesn't match the address you're using (for example localhost vs 127.0.0.1, or a different port).                                                                      |
+| Behind a proxy, all visitors share one rate limit or IP   | Set `TRUST_PROXY` (see Reverse proxy).                                                                                                                                                   |
+| Sidebar stuck on "Reconnecting…"                          | Your proxy is buffering or timing out the event stream. Disable buffering for `/api/events`. The rest of the dashboard works without it.                                                 |
+| Message delete logs say "not cached"                      | The message was sent before the bot started, or was evicted from the cache. Raise `/logs config cache_size` if needed.                                                                   |
 
 ## Project layout
 
@@ -388,11 +445,14 @@ The same definition drives the Discord registration JSON, the zod input validati
 src/
   config/     env + settings schemas (zod)
   db/         Drizzle schema, migrations, client
-  shared/     code shared with the dashboard (option descriptors, permission nodes, result types)
-  services/   all business logic (permissions, commands, settings, audit, logs, ...)
+  shared/     types and helpers shared with the dashboard (option descriptors, permission nodes, API shapes)
+  services/   all business logic: permissions, commands, moderation, logs, voice, members, activity,
+              tiers, settings, audit, sessions, dashboard queries, live events
   discord/    narrow ports + discord.js adapters
-  bot/        client, events, slash command definitions, registration
-  api/        Fastify server
-  jobs/       scheduled tasks (later phases)
-tests/        vitest unit tests with in-memory SQLite and fake Discord ports
+  bot/        client, gateway events, slash command definitions, registration
+  api/        Fastify server: auth, dashboard routes, management routes, live event stream
+  jobs/       scheduled tasks (unbans, retention, voice minutes, tier sync, session cleanup)
+web/          React dashboard (Vite + Tailwind), built into dist/web and served by the API
+scripts/      invite URL generator, dashboard demo
+tests/        vitest tests with in-memory SQLite and fake Discord ports
 ```

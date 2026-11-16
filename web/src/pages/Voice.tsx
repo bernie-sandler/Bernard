@@ -130,7 +130,7 @@ export function VoicePage() {
   const q = useQuery({
     queryKey: ['voice'],
     queryFn: () => api<VoiceResponse>('/voice'),
-    refetchInterval: 15_000,
+    refetchInterval: 60_000,
   });
   const remove = useMutation({
     mutationFn: (id: string) => api(`/voice/hubs/${id}`, { method: 'DELETE' }),
