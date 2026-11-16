@@ -1,0 +1,53 @@
+{
+  "name": "bernard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Private Discord server bot with an admin web dashboard",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "packageManager": "pnpm@10.16.1",
+  "scripts": {
+    "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
+    "start": "node dist/src/index.js",
+    "build": "pnpm build:server && pnpm build:web",
+    "build:server": "tsc -p tsconfig.build.json",
+    "build:web": "vite build --config web/vite.config.ts",
+    "dev:web": "vite --config web/vite.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "tsx --env-file-if-exists=.env src/db/migrate-cli.ts",
+    "invite-url": "tsx --env-file-if-exists=.env scripts/invite-url.ts"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "better-sqlite3": "^13.2.0",
+    "croner": "^11.0.1",
+    "discord.js": "^14.28.1",
+    "drizzle-orm": "^0.45.4",
+    "fastify": "^5.12.8",
+    "lru-cache": "^11.5.3",
+    "pino": "^10.4.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.6.8",
+    "@types/better-sqlite3": "^9.6.0",
+    "@types/node": "^22.20.5",
+    "drizzle-kit": "^0.31.11",
+    "pino-pretty": "^13.2.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0"
+  }
+}

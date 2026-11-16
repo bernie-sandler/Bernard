@@ -1,0 +1,18 @@
+services:
+  bernard:
+    build: .
+    image: bernard:latest
+    container_name: bernard
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Always keep the database on the mounted volume inside the container.
+      DATABASE_PATH: /data/bernard.db
+    ports:
+      - "3000:3000"
+    volumes:
+      - bernard-data:/data
+    stop_grace_period: 15s
+
+volumes:
+  bernard-data:
