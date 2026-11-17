@@ -1,6 +1,7 @@
 name: Release
 
-# Cut a release by bumping "version" in package.json on main, then pushing a matching tag:
+# Cut a release by bumping "version" in package.json and adding a "## [0.2.0]" section to CHANGELOG.md on main
+# (it becomes the release notes), then pushing a matching tag:
 #   git tag v0.2.0 && git push origin v0.2.0
 # Tags with a suffix (v0.2.0-rc.1) publish as a prerelease and do not move the "latest" image tag.
 # Older GitHub releases are deleted afterwards (tags are kept): see "Remove superseded releases".
@@ -40,6 +41,15 @@ jobs:
           git fetch origin main
           if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
             echo "::error::Tag $GITHUB_REF_NAME points at a commit that is not on main"
+            exit 1
+          fi
+      # Release notes come from CHANGELOG.md, so a stable release needs its section before anything is published.
+      # Pre-releases without one fall back to GitHub's generated notes.
+      - name: CHANGELOG has a section for this version
+        run: |
+          case "$GITHUB_REF_NAME" in *-*) exit 0 ;; esac
+          if ! bash .github/scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > /dev/null; then
+            echo "::error::CHANGELOG.md has no \"## [${GITHUB_REF_NAME#v}]\" section to use as release notes"
             exit 1
           fi
 
@@ -94,24 +104,34 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create release with generated notes
+      - uses: actions/checkout@v7
+      # Notes are this version's CHANGELOG.md section rather than GitHub's generated notes, which list every PR
+      # merged since the last tag (chores included).
+      - name: Create release with CHANGELOG notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          version="${GITHUB_REF_NAME#v}"
+          image="${IMAGE,,}"
           prerelease=""
           case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
+
+          docker_section="$(printf '### Docker image\n\n```\ndocker pull %s:%s\n```\n' "$image" "$version")"
+          if bash .github/scripts/release-notes.sh "$version" > notes.md; then
+            printf '\n%s\n' "$docker_section" >> notes.md
+            notes_args=(--notes-file notes.md)
+          else
+            # Only pre-releases get here: verify fails stable tags that have no CHANGELOG section.
+            notes_args=(--generate-notes --notes "$docker_section")
+          fi
+
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --generate-notes \
             --title "$GITHUB_REF_NAME" \
+            "${notes_args[@]}" \
             $prerelease
-          {
-            echo "### Docker image"
-            echo '```'
-            echo "docker pull ${IMAGE}:${GITHUB_REF_NAME#v}"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' "$docker_section" >> "$GITHUB_STEP_SUMMARY"
 
       # Keeps one release (and, while an RC is out, one pre-release). Only releases are deleted: the git
       # tags stay. A stable release removes every older release and pre-release; a pre-release removes
