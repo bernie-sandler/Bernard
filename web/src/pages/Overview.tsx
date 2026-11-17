@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { OverviewResponse } from '../../../src/shared/api.js';
+import { activitySummary, type OverviewResponse } from '../../../src/shared/api.js';
 import { api } from '../api.js';
 import { CaseTable } from '../components/CaseTable.js';
 import { PageHeader } from '../components/Layout.js';
@@ -133,9 +133,7 @@ export function OverviewPage() {
                   >
                     {m.name}
                   </Link>
-                  <span className="text-xs text-slate-500">
-                    {m.messagePoints} msg · {m.voiceMinutes} min
-                  </span>
+                  <span className="truncate text-xs text-slate-500">{activitySummary(m)}</span>
                   <span className="w-14 text-right text-sm font-semibold">{number(m.score)}</span>
                 </li>
               ))}
