@@ -113,23 +113,25 @@ The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and mig
 
 See [.env.example](.env.example) for the full annotated list. The app validates everything with zod at startup and exits with a list of every problem if something is wrong.
 
-| Variable                   | Required     | Default                 | Notes                                                        |
-| -------------------------- | ------------ | ----------------------- | ------------------------------------------------------------ |
-| `DISCORD_TOKEN`            | yes          |                         | Bot token                                                    |
-| `DISCORD_CLIENT_ID`        | yes          |                         | Application ID                                               |
-| `GUILD_ID`                 | yes          |                         | The one server this bot serves                               |
-| `DASHBOARD_ENABLED`        | no           | `true`                  |                                                              |
-| `DISCORD_CLIENT_SECRET`    | if dashboard |                         | OAuth2 client secret                                         |
-| `SESSION_SECRET`           | if dashboard |                         | 32+ random characters                                        |
-| `PUBLIC_BASE_URL`          | no           | `http://localhost:3000` | Used for the OAuth redirect                                  |
-| `TRUST_PROXY`              | no           | `false`                 | `true`, a hop count, or proxy IPs/CIDRs                      |
-| `SESSION_TTL_HOURS`        | no           | `168`                   |                                                              |
-| `COOKIE_SECURE`            | no           | auto                    | `true` when the base URL is https                            |
-| `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                                              |
-| `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                                              |
-| `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                                               |
-| `PUID` / `PGID`            | no           | `1000` / `1000`         | Docker only: user and group that run the app and own `/data` |
-| `UMASK`                    | no           | `0022`                  | Docker only: file-creation mask                              |
+| Variable                   | Required     | Default                 | Notes                                                                   |
+| -------------------------- | ------------ | ----------------------- | ----------------------------------------------------------------------- |
+| `DISCORD_TOKEN`            | yes          |                         | Bot token                                                               |
+| `DISCORD_CLIENT_ID`        | yes          |                         | Application ID                                                          |
+| `GUILD_ID`                 | yes          |                         | The one server this bot serves                                          |
+| `DASHBOARD_ENABLED`        | no           | `true`                  |                                                                         |
+| `DISCORD_CLIENT_SECRET`    | if dashboard |                         | OAuth2 client secret                                                    |
+| `SESSION_SECRET`           | if dashboard |                         | 32+ random characters                                                   |
+| `PUBLIC_BASE_URL`          | no           | `http://localhost:3000` | Used for the OAuth redirect                                             |
+| `TRUST_PROXY`              | no           | `false`                 | `true`, a hop count, or proxy IPs/CIDRs                                 |
+| `SESSION_TTL_HOURS`        | no           | `168`                   |                                                                         |
+| `COOKIE_SECURE`            | no           | auto                    | `true` when the base URL is https                                       |
+| `BELLTOWER_URL`            | no           |                         | Belltower's address; turns on [issue reports](#issue-reports-belltower) |
+| `BELLTOWER_TOKEN`          | with URL     |                         | A full Belltower API token (`tt_…`)                                     |
+| `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                                                         |
+| `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                                                         |
+| `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                                                          |
+| `PUID` / `PGID`            | no           | `1000` / `1000`         | Docker only: user and group that run the app and own `/data`            |
+| `UMASK`                    | no           | `0022`                  | Docker only: file-creation mask                                         |
 
 ## Deploying with Docker
 
@@ -350,6 +352,28 @@ For safety, a panel can't offer @everyone, roles managed by an integration or bo
 
 Clicking a panel needs no permission node: anyone who can see the message can use it.
 
+## Issue reports (Belltower)
+
+Friends tell you "Plex is down" in Discord, and the message scrolls away. With [Belltower](https://github.com/bernie-sandler/Belltower) connected, they can report it properly instead: Bernard opens a Belltower ticket and messages them when it's fixed.
+
+1. In Belltower (**1.6 or later**), open **Account → Your tokens** and create a **full** token. A read-only token can't open tickets. Use an account that sees every tag, or Bernard loses track of tickets it can't see. The token doesn't need "may complete tickets".
+2. Set `BELLTOWER_URL` (as Bernard can reach it, e.g. `http://192.168.1.10:8080`) and `BELLTOWER_TOKEN`, then restart Bernard. On the dashboard's **Issue reports** page, **Test connection** checks both.
+3. Optionally post a **Report an issue** panel (on that page, or `/belltower panel channel`). Its button opens a short form, so members don't need the command.
+
+Members report with `/report service [details]` or the panel. `service` suggests the monitors from your [status page](#status-embed-uptime-kuma), but anything can be typed. Each report becomes a ticket titled after the service, with the details and who reported it, tagged `Discord` by default. Tags, priority, column and a per-member cooldown (default 2 minutes) are on the Issue reports page.
+
+**Reports join Uptime Kuma's tickets.** When a report names a Kuma monitor, Bernard uses the same key as Belltower's Uptime Kuma webhook (`uptime-kuma:<monitor id>`). If Kuma has already opened a ticket for that monitor, the report is added to it as a note instead of opening another, and so are later reports from other members. When Kuma sees the monitor come back up and resolves the ticket, everyone who reported it hears about it. Reports for something that isn't a monitor always open their own ticket.
+
+**Hearing back.** Bernard checks Belltower every minute. When a ticket is done, each reporter gets a DM with the ticket number and the resolution reason ("Fixed", "Won't fix"…). If their DMs are closed, Bernard mentions them in the channel they reported from instead. A ticket that's deleted closes the report too, with a short note. If Belltower can't be reached, nothing is closed; the dashboard shows the error until it's back. Reporting can be paused on the Issue reports page; reports already filed are still followed up.
+
+| Command                      | Node               | Notes                                                                   |
+| ---------------------------- | ------------------ | ----------------------------------------------------------------------- |
+| `/report service [details]`  | `public:report`    | Open to everyone by default. The reply is only visible to the reporter. |
+| `/belltower panel [channel]` | `config:belltower` | Posts (or moves) the report panel. Leave `channel` empty to remove it.  |
+| `/belltower test`            | `config:belltower` | Checks the address and token.                                           |
+
+The panel's button uses `public:report` too: deny that node to a role and its members can't report either way.
+
 ## Web dashboard
 
 The dashboard is served by the same process on `PORT` (default 3000). Members sign in with Discord (`identify` scope only). The bot then checks that they're in the server and that their roles grant `dashboard:access`.
@@ -375,6 +399,7 @@ The dashboard is served by the same process on `PORT` (default 3000). Members si
 | Voice hubs                                             | `config:voice` (hubs and voice settings)                                                                                                                                                                                                                       |
 | Status                                                 | `config:status` (Uptime Kuma connection, embed channel, alerts and ping roles)                                                                                                                                                                                 |
 | Role panels                                            | `config:rolepanels` (create, edit, post and delete panels)                                                                                                                                                                                                     |
+| Issue reports                                          | `config:belltower` (Belltower connection test, report settings, report panel, open and closed reports)                                                                                                                                                         |
 | Settings                                               | Each section needs its slash command's node: logs `config:logs`; activity and tenure `config:activity`. Moderation DMs and the Administrator bypass have no slash command and use the new `config:settings` node. Sections you can't edit are shown read-only. |
 | Audit log                                              | `dashboard:audit` (denied by default)                                                                                                                                                                                                                          |
 

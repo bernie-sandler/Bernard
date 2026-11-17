@@ -57,9 +57,29 @@ export const envSchema = z
       .max(24 * 90)
       .default(168),
     COOKIE_SECURE: boolString.optional(),
+
+    /** Belltower (issue reports). Both or neither; unset turns /report off. */
+    BELLTOWER_URL: z
+      .url({ protocol: /^https?$/, error: 'must be an http(s) URL' })
+      .optional()
+      .or(z.literal('').transform(() => undefined))
+      .transform((u) => u?.replace(/\/+$/, '')),
+    BELLTOWER_TOKEN: z
+      .string()
+      .regex(/^tt_\S+$/, 'must be a Belltower API token (starts with tt_)')
+      .optional()
+      .or(z.literal('').transform(() => undefined)),
   })
   .superRefine((env, ctx) => {
     for (const issue of dashboardIssues(env)) ctx.addIssue({ code: 'custom', ...issue });
+    if (Boolean(env.BELLTOWER_URL) !== Boolean(env.BELLTOWER_TOKEN)) {
+      const missing = env.BELLTOWER_URL ? 'BELLTOWER_TOKEN' : 'BELLTOWER_URL';
+      ctx.addIssue({
+        code: 'custom',
+        path: [missing],
+        message: 'set BELLTOWER_URL and BELLTOWER_TOKEN together',
+      });
+    }
   })
   .transform((env) => ({
     ...env,

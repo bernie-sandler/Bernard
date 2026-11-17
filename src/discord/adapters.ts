@@ -172,7 +172,7 @@ export function toMessagePayload(msg: OutgoingMessage) {
     content: msg.content ? msg.content.slice(0, 2000) : null,
     embeds: msg.embed ? [toEmbed(msg.embed)] : [],
     components: rows,
-    allowedMentions: { parse: [], roles: msg.mentionRoleIds ?? [] },
+    allowedMentions: { parse: [], roles: msg.mentionRoleIds ?? [], users: msg.mentionUserIds ?? [] },
   };
 }
 

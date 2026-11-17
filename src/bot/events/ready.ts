@@ -59,6 +59,11 @@ export async function onReady(deps: {
   const voice = await services.voice.reconcile();
   logger.info(voice, 'Voice channels reconciled');
 
+  // Re-render the report panel, so an upgrade's new wording reaches the posted message.
+  await services.belltower
+    .syncPanel()
+    .catch((err) => logger.warn({ err }, 'Could not update the report panel'));
+
   if (!services.permissions.hasAnyRules()) {
     logger.warn(
       services.settings.get().permissions.adminBypass

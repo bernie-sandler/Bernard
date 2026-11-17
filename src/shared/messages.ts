@@ -34,4 +34,6 @@ export interface OutgoingMessage {
   select?: MessageSelect;
   /** Roles the content may ping. Nothing else is ever mentioned. */
   mentionRoleIds?: string[];
+  /** Members the content may ping. */
+  mentionUserIds?: string[];
 }

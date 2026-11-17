@@ -1,4 +1,5 @@
 import type { CommandDefinition } from '../../services/commands/types.js';
+import { belltowerCommands } from './belltower.js';
 import { coreCommands } from './core.js';
 import { infoCommands } from './info.js';
 import { logsCommand } from './logs.js';
@@ -20,4 +21,5 @@ export const allCommands: CommandDefinition[] = [
   ...tierCommands,
   ...statusCommands,
   ...roleCommands,
+  ...belltowerCommands,
 ];

@@ -1,9 +1,17 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import type { ReportRow } from '../services/belltower/service.js';
 import type { Services } from '../services/container.js';
 import { panelInputSchema, type RolePanel } from '../services/rolePanels.js';
 import { KumaError } from '../services/status/kuma.js';
-import type { RolePanelDto, RolePanelsResponse, StatusResponse, StatusTestResponse } from '../shared/api.js';
+import type {
+  BelltowerResponse,
+  IssueReportDto,
+  RolePanelDto,
+  RolePanelsResponse,
+  StatusResponse,
+  StatusTestResponse,
+} from '../shared/api.js';
 import { gate, HttpError, parseInput, requireActor } from './http.js';
 
 const snowflake = z.string().regex(/^\d{17,20}$/, 'must be a Discord ID');
@@ -17,7 +25,7 @@ const kumaSlug = z
   .regex(/^[a-zA-Z0-9_-]{1,100}$/, 'must be a status page slug');
 const numericId = z.object({ id: z.coerce.number().int().min(0).max(9_999_999_999) });
 
-/** Status embed (Uptime Kuma) and self-assign role panel routes, mounted under /api. */
+/** Status embed (Uptime Kuma), self-assign role panel and Belltower routes, mounted under /api. */
 export function registerIntegrationRoutes(api: FastifyInstance, services: Services): void {
   const auditActor = (req: FastifyRequest) => ({
     id: requireActor(req).userId,
@@ -173,4 +181,84 @@ export function registerIntegrationRoutes(api: FastifyInstance, services: Servic
   api.post('/role-panels/:id/refresh', panelGate, async (req) =>
     panelDto(await services.rolePanels.refresh(panelId(req))),
   );
+
+  // ── Belltower issue reports (config:belltower, same as /belltower) ──
+
+  const belltowerGate = { preHandler: gate(services, 'config:belltower') };
+  const reportDto = (r: ReportRow): IssueReportDto => ({
+    id: r.id,
+    reporterId: r.reporterId,
+    reporterName: services.guild.cachedMember(r.reporterId)?.displayName ?? null,
+    channelId: r.channelId,
+    service: r.service,
+    monitorId: r.monitorId,
+    details: r.details,
+    cardId: r.cardId,
+    ticketNo: r.ticketNo,
+    cardStatus: r.cardStatus,
+    state: r.state,
+    resolution: r.resolution,
+    createdAt: r.createdAt.toISOString(),
+    closedAt: r.closedAt?.toISOString() ?? null,
+    notifiedVia: r.notifiedVia,
+  });
+  const belltowerResponse = (): BelltowerResponse => {
+    const view = services.belltower.view();
+    const reports = services.belltower.list();
+    return {
+      configured: view.configured,
+      error: view.error,
+      errorSince: view.errorSince,
+      lastPollAt: view.lastPollAt,
+      config: { ...services.settings.get().belltower },
+      panel: view.panel,
+      open: reports.open.map(reportDto),
+      recent: reports.recent.map(reportDto),
+    };
+  };
+
+  api.get('/belltower', belltowerGate, async (): Promise<BelltowerResponse> => belltowerResponse());
+
+  api.post('/belltower/test', belltowerGate, async (): Promise<BelltowerResponse> => {
+    await services.belltower.test();
+    return belltowerResponse();
+  });
+
+  api.patch('/belltower/config', belltowerGate, async (req): Promise<BelltowerResponse> => {
+    const body = parseInput(
+      z.object({
+        enabled: z.boolean(),
+        labels: z.array(z.string().trim().min(1).max(50)).max(10),
+        priority: z.enum(['P0', 'P1', 'P2', 'P3']).nullable(),
+        column: z.string().trim().max(100).nullable(),
+        cooldownSeconds: z.number().int().min(0).max(3600),
+      }),
+      req.body,
+    );
+    services.settings.update(auditActor(req), 'settings.belltower', (draft) => {
+      draft.belltower.enabled = body.enabled;
+      draft.belltower.labels = [...new Set(body.labels)];
+      draft.belltower.priority = body.priority;
+      draft.belltower.column = body.column || null;
+      draft.belltower.cooldownSeconds = body.cooldownSeconds;
+    });
+    return belltowerResponse();
+  });
+
+  api.patch('/belltower/panel', belltowerGate, async (req): Promise<BelltowerResponse> => {
+    const body = parseInput(z.object({ channelId: snowflake.nullable() }), req.body);
+    await services.belltower.setPanelChannel(auditActor(req), body.channelId);
+    return belltowerResponse();
+  });
+
+  api.post('/belltower/poll', belltowerGate, async (): Promise<BelltowerResponse> => {
+    await services.belltower.poll();
+    return belltowerResponse();
+  });
+
+  api.post('/belltower/reports/:id/dismiss', belltowerGate, async (req): Promise<BelltowerResponse> => {
+    const { id } = parseInput(numericId, req.params);
+    if (services.belltower.dismiss([id]) === 0) throw new HttpError(404, 'That report is already closed.');
+    return belltowerResponse();
+  });
 }

@@ -3,6 +3,8 @@ import type { BotInfoPort, GuildPort, MessengerPort, ModerationPort, VoicePort }
 import type { Logger } from '../logger.js';
 import { ActivityService } from './activity.js';
 import { AuditService } from './audit.js';
+import type { BelltowerClient } from './belltower/client.js';
+import { BelltowerService } from './belltower/service.js';
 import { BotStateStore } from './botState.js';
 import { CommandExecutor } from './commands/executor.js';
 import { CommandRegistry } from './commands/registry.js';
@@ -42,6 +44,7 @@ export interface Services {
   tiers: TierService;
   status: StatusService;
   rolePanels: RolePanelService;
+  belltower: BelltowerService;
   state: BotStateStore;
   sessions: SessionService;
   live: LiveEvents;
@@ -59,6 +62,8 @@ export interface ContainerDeps {
   commands: CommandDefinition[];
   /** Uptime Kuma client (default: real HTTP). */
   kuma?: KumaClient;
+  /** Belltower client; null or omitted when BELLTOWER_URL / BELLTOWER_TOKEN aren't set. */
+  belltower?: BelltowerClient | null;
   /** Dashboard session lifetime (default 7 days). */
   sessionTtlMs?: number;
 }
@@ -138,6 +143,20 @@ export function createContainer(deps: ContainerDeps): Container {
     logger,
   });
 
+  const belltower = new BelltowerService({
+    db,
+    guildId,
+    guild,
+    mod: deps.mod,
+    messenger: deps.messenger,
+    settings,
+    state,
+    status,
+    client: deps.belltower ?? null,
+    logger,
+    live,
+  });
+
   const services: Services = {
     db,
     logger,
@@ -157,6 +176,7 @@ export function createContainer(deps: ContainerDeps): Container {
     tiers,
     status,
     rolePanels,
+    belltower,
     state,
     sessions,
     live,
