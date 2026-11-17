@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - New installs score voice at 0.2 points per minute (1 point per 5 minutes) instead of 1. Existing servers keep their saved value. Lowering it re-scores past activity, which can move members below a tier's activity requirement, so review your tier thresholds when you change it.
 
+### Removed
+
+- Docker images are no longer tagged `sha-<commit>`. Pin a version tag (`0.1.3`, `0.1`) or `latest` instead.
+
 ## [0.1.3] - 2026-11-16
 
 ### Fixed
