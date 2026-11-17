@@ -455,13 +455,21 @@ To release ([`release.yml`](.github/workflows/release.yml)):
    git push origin v0.2.0
    ```
 
-The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release whose notes are the version's `CHANGELOG.md` section. A tag with a suffix, like `v0.2.0-rc.1`, becomes a prerelease and leaves `latest` alone. Prerelease tags may also be pushed on `dev`, to try an image before the release reaches `main`.
+The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release whose notes are the version's `CHANGELOG.md` section.
+
+To try a numbered build before it reaches `main`, publish a release candidate from `dev` with [`prerelease.yml`](.github/workflows/prerelease.yml). Run it from the Actions tab (**Prerelease** → **Run workflow** on `dev`) or with:
+
+```bash
+gh workflow run prerelease.yml --ref dev
+```
+
+It runs CI, publishes an image tagged like `0.2.0-rc.1` (never `latest`), and creates the `v0.2.0-rc.1` tag and a GitHub prerelease whose notes are the `[Unreleased]` section of `CHANGELOG.md`. No version bump is needed: the version is the one in `package.json`, or the next patch version once that one is released, and each run counts up the `rc` number. Pass `-f version=0.3.0` to pick another version. Release candidates can't be published by pushing a tag.
 
 Every push to `dev` also publishes `ghcr.io/bernie-sandler/bernard:dev` ([`dev-image.yml`](.github/workflows/dev-image.yml)), so a test container can follow unreleased changes without a version bump or tag. It is rebuilt and overwritten on each push, isn't a GitHub release, and can break between releases, so keep production on a version tag or `latest`. To rebuild it by hand, run the workflow from the Actions tab.
 
 An urgent fix for a released version can skip `dev`: branch from `main`, merge the fix (with its version bump and changelog section) into `main` and tag it, then merge `main` back into `dev` with a merge commit.
 
-Only the newest release is kept on GitHub. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags and Docker image tags are never removed, so any version can still be checked out or pulled.
+GitHub keeps at most one release and one release candidate. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags and Docker image tags are never removed, so any version can still be checked out or pulled.
 
 ## Troubleshooting
 

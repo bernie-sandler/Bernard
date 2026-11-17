@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Release candidates (`X.Y.Z-rc.N` images and GitHub prereleases) are published from `dev` by running the new Prerelease workflow, with no version bump. Pushing an `-rc` tag by hand no longer publishes anything. GitHub keeps at most one release and one release candidate.
 - New installs score voice at 0.2 points per minute (1 point per 5 minutes) instead of 1. Existing servers keep their saved value. Lowering it re-scores past activity, which can move members below a tier's activity requirement, so review your tier thresholds when you change it.
 
 ### Removed
