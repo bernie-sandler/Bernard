@@ -46,37 +46,61 @@ export type ActivityKind = 'message' | 'image' | 'link' | 'reaction';
 export interface ActivityWeights {
   message: number;
   voice: number;
+  /** Multiplier for voice minutes past the long-session threshold. */
+  voiceLongMultiplier: number;
   image: number;
   link: number;
   reaction: number;
+  reactionReceived: number;
 }
 
-const EMPTY_COUNTS: ActivityCounts = { messagePoints: 0, voiceMinutes: 0, images: 0, links: 0, reactions: 0 };
+const EMPTY_COUNTS: ActivityCounts = {
+  messagePoints: 0,
+  voiceMinutes: 0,
+  images: 0,
+  links: 0,
+  reactions: 0,
+  reactionsReceived: 0,
+  voiceLongMinutes: 0,
+};
+
+/**
+ * A voice session survives gaps up to this long (reconnects, briefly being alone), so a dropped
+ * connection doesn't restart it.
+ */
+export const VOICE_SESSION_GAP_MS = 5 * 60_000;
+
+/** The largest reactionReceiveWindowMinutes the settings allow. */
+const MAX_RECEIVE_WINDOW_MS = 1440 * 60_000;
 
 export function activityPoints(c: ActivityCounts, w: ActivityWeights): ActivityPoints {
+  const longMinutes = Math.min(c.voiceLongMinutes, c.voiceMinutes);
   return {
     messages: c.messagePoints * w.message,
-    voice: c.voiceMinutes * w.voice,
+    voice: (c.voiceMinutes - longMinutes) * w.voice + longMinutes * w.voice * w.voiceLongMultiplier,
     images: c.images * w.image,
     links: c.links * w.link,
     reactions: c.reactions * w.reaction,
+    reactionsReceived: c.reactionsReceived * w.reactionReceived,
   };
 }
 
 export function activityScore(c: ActivityCounts, w: ActivityWeights): number {
   const p = activityPoints(c, w);
-  return p.messages + p.voice + p.images + p.links + p.reactions;
+  return p.messages + p.voice + p.images + p.links + p.reactions + p.reactionsReceived;
 }
 
 const sums = {
   m: sum(activityDaily.messagePoints),
   v: sum(activityDaily.voiceMinutes),
+  vl: sum(activityDaily.voiceLongMinutes),
   i: sum(activityDaily.imageCount),
   l: sum(activityDaily.linkCount),
   r: sum(activityDaily.reactionCount),
+  rr: sum(activityDaily.reactionsReceivedCount),
 };
 
-type SumRow = { m: string | null; v: string | null; i: string | null; l: string | null; r: string | null };
+type SumRow = { [K in keyof typeof sums]: string | null };
 
 const toCounts = (row: SumRow | undefined): ActivityCounts => ({
   messagePoints: Number(row?.m ?? 0),
@@ -84,7 +108,18 @@ const toCounts = (row: SumRow | undefined): ActivityCounts => ({
   images: Number(row?.i ?? 0),
   links: Number(row?.l ?? 0),
   reactions: Number(row?.r ?? 0),
+  reactionsReceived: Number(row?.rr ?? 0),
+  voiceLongMinutes: Number(row?.vl ?? 0),
 });
+
+export interface ReactionEvent {
+  reactorId: string;
+  /** The message author, or null when it's a bot, webhook or system message. */
+  authorId: string | null;
+  messageId: string;
+  /** When the message was posted (ms). */
+  messageCreatedAt: number;
+}
 
 export interface ActivityDeps {
   db: Db;
@@ -99,12 +134,21 @@ export interface ActivityDeps {
 
 /**
  * Activity scoring. Never stores message content: only per-day counts of messages, image and link
- * bonuses and reactions that earned points (after the cooldown), plus voice minutes. Weights are
+ * bonuses, reactions given and received that earned points, plus voice minutes (and how many of
+ * them came after the long-session threshold). Weights are
  * applied when scores are read, so changing them re-scores history.
  */
 export class ActivityService {
   /** Last award time per `kind:userId`. */
   private readonly lastAward = new Map<string, number>();
+  /** Continuous voice minutes per member and when they last earned one. */
+  private readonly voiceStreak = new Map<string, { minutes: number; lastTick: number }>();
+  /** Reactors already counted per recent message, with the message's posting time. */
+  private readonly messageReactors = new Map<string, { createdAt: number; reactors: Set<string> }>();
+  /** When a member recently received point-earning reactions (for the grace threshold). */
+  private readonly receivedTimes = new Map<string, number[]>();
+  /** End of a member's reaction grace period. */
+  private readonly graceUntil = new Map<string, number>();
   private readonly now: () => number;
 
   constructor(private readonly d: ActivityDeps) {
@@ -116,9 +160,11 @@ export class ActivityService {
     return {
       message: a.pointsPerMessage,
       voice: a.pointsPerVoiceMinute,
+      voiceLongMultiplier: a.voiceLongSessionMultiplier,
       image: a.pointsPerImage,
       link: a.pointsPerLink,
       reaction: a.pointsPerReaction,
+      reactionReceived: a.pointsPerReactionReceived,
     };
   }
 
@@ -157,12 +203,71 @@ export class ActivityService {
     return earned;
   }
 
-  /** A member reacted to someone else's message. Returns true if it earned points. */
-  recordReaction(userId: string): boolean {
+  /**
+   * A member reacted to a message. The reactor earns the (cooldown-limited) reaction point. The
+   * author earns a received point if the reaction came within the window after posting and this
+   * reactor hasn't already counted on the message. Nobody earns reaction points during their grace
+   * period, and reacting to your own message earns nothing.
+   */
+  recordReaction(e: ReactionEvent): { given: boolean; received: boolean } {
     const now = this.now();
-    if (!this.claim('reaction', userId, now)) return false;
-    this.award(userId, now, { ...EMPTY_COUNTS, reactions: 1 });
+    if (e.authorId === e.reactorId) return { given: false, received: false };
+    const given = !this.inGrace(e.reactorId, now) && this.claim('reaction', e.reactorId, now);
+    if (given) this.award(e.reactorId, now, { ...EMPTY_COUNTS, reactions: 1 });
+    const author = e.authorId;
+    const received = author !== null && this.claimReceived(author, e, now);
+    if (received) this.award(author, now, { ...EMPTY_COUNTS, reactionsReceived: 1 });
+    return { given, received };
+  }
+
+  /** End of the member's reaction grace period (ms), or null when they aren't in one. */
+  reactionGraceUntil(userId: string, now = this.now()): number | null {
+    return this.inGrace(userId, now) ? (this.graceUntil.get(userId) ?? null) : null;
+  }
+
+  private inGrace(userId: string, now: number): boolean {
+    const until = this.graceUntil.get(userId);
+    if (until === undefined) return false;
+    if (now < until) return true;
+    this.graceUntil.delete(userId);
+    return false;
+  }
+
+  private claimReceived(authorId: string, e: ReactionEvent, now: number): boolean {
+    const a = this.d.settings.get().activity;
+    const windowMs = a.reactionReceiveWindowMinutes * 60_000;
+    this.pruneMessages(now);
+    if (now - e.messageCreatedAt > windowMs || this.inGrace(authorId, now)) return false;
+    let entry = this.messageReactors.get(e.messageId);
+    if (!entry) {
+      entry = { createdAt: e.messageCreatedAt, reactors: new Set() };
+      this.messageReactors.set(e.messageId, entry);
+    }
+    if (entry.reactors.has(e.reactorId)) return false;
+    entry.reactors.add(e.reactorId);
+
+    if (a.reactionGraceThreshold > 0) {
+      const since = now - a.reactionGraceWindowMinutes * 60_000;
+      const times = (this.receivedTimes.get(authorId) ?? []).filter((t) => t > since);
+      times.push(now);
+      if (times.length >= a.reactionGraceThreshold) {
+        this.graceUntil.set(authorId, now + a.reactionGraceMinutes * 60_000);
+        this.receivedTimes.delete(authorId);
+      } else {
+        this.receivedTimes.set(authorId, times);
+      }
+    }
     return true;
+  }
+
+  /**
+   * Forget messages past the longest allowed receive window. Using the maximum rather than the
+   * current setting means widening the window later can't count the same reactor twice.
+   */
+  private pruneMessages(now: number): void {
+    for (const [id, m] of this.messageReactors) {
+      if (now - m.createdAt > MAX_RECEIVE_WINDOW_MS) this.messageReactors.delete(id);
+    }
   }
 
   private award(userId: string, now: number, counts: ActivityCounts): void {
@@ -176,13 +281,24 @@ export class ActivityService {
       afkChannelId,
       countSelfDeafened: this.d.settings.get().activity.countSelfDeafened,
     });
-    const day = dateKey(this.now());
-    const counts = { ...EMPTY_COUNTS, voiceMinutes: 1 };
-    const delta = activityScore(counts, this.weights());
-    this.d.db.transaction(() => {
-      for (const u of users) this.add(u, day, counts);
+    const now = this.now();
+    const day = dateKey(now);
+    const longAfter = this.d.settings.get().activity.voiceLongSessionMinutes;
+    const w = this.weights();
+    const awards = users.map((userId) => {
+      const prev = this.voiceStreak.get(userId);
+      const minutes = prev && now - prev.lastTick <= VOICE_SESSION_GAP_MS ? prev.minutes + 1 : 1;
+      this.voiceStreak.set(userId, { minutes, lastTick: now });
+      const counts = { ...EMPTY_COUNTS, voiceMinutes: 1, voiceLongMinutes: minutes > longAfter ? 1 : 0 };
+      return { userId, counts, delta: activityScore(counts, w) };
     });
-    for (const u of users) this.checkCrossing(u, delta);
+    for (const [userId, s] of this.voiceStreak) {
+      if (now - s.lastTick > VOICE_SESSION_GAP_MS) this.voiceStreak.delete(userId);
+    }
+    this.d.db.transaction(() => {
+      for (const a of awards) this.add(a.userId, day, a.counts);
+    });
+    for (const a of awards) this.checkCrossing(a.userId, a.delta);
     return users;
   }
 
@@ -198,6 +314,8 @@ export class ActivityService {
         imageCount: c.images,
         linkCount: c.links,
         reactionCount: c.reactions,
+        voiceLongMinutes: c.voiceLongMinutes,
+        reactionsReceivedCount: c.reactionsReceived,
       })
       .onConflictDoUpdate({
         target: [activityDaily.guildId, activityDaily.userId, activityDaily.date],
@@ -207,6 +325,8 @@ export class ActivityService {
           imageCount: sql`${activityDaily.imageCount} + ${c.images}`,
           linkCount: sql`${activityDaily.linkCount} + ${c.links}`,
           reactionCount: sql`${activityDaily.reactionCount} + ${c.reactions}`,
+          voiceLongMinutes: sql`${activityDaily.voiceLongMinutes} + ${c.voiceLongMinutes}`,
+          reactionsReceivedCount: sql`${activityDaily.reactionsReceivedCount} + ${c.reactionsReceived}`,
         },
       })
       .run();
@@ -285,6 +405,8 @@ export class ActivityService {
           images: r.imageCount,
           links: r.linkCount,
           reactions: r.reactionCount,
+          reactionsReceived: r.reactionsReceivedCount,
+          voiceLongMinutes: r.voiceLongMinutes,
         };
         return { date: r.date, ...counts, points: activityPoints(counts, w) };
       });

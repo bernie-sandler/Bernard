@@ -38,16 +38,23 @@ const pick = <T>(arr: T[]) => arr[Math.floor(rand() * arr.length)]!;
 const system = { id: OWNER_ID, source: 'system' as const };
 
 // ── Roles, channels, members ────────────────────────────────────────────────
-const admin = guild.addRole('Admin', 40, { color: 0xe74c3c });
-const mod = guild.addRole('Moderator', 30, { color: 0x3498db });
+const admin = guild.addRole('Admin', 40, { color: 0xe74c3c, elevated: true });
+const mod = guild.addRole('Moderator', 30, { color: 0x3498db, elevated: true });
 const veteran = guild.addRole('Veteran', 12, { color: 0xf1c40f });
 const regular = guild.addRole('Regular', 11, { color: 0x2ecc71 });
 const newcomer = guild.addRole('Newcomer', 10, { color: 0x95a5a6 });
 guild.addRole('Booster', 5, { color: 0xff73fa, managed: true });
+const minecraft = guild.addRole('Minecraft', 4, { color: 0x6aa84f });
+const valorant = guild.addRole('Valorant', 4, { color: 0xff4655 });
+const rocketLeague = guild.addRole('Rocket League', 4, { color: 0x1f8ef1 });
+const mcUpdates = guild.addRole('MC updates', 3, { color: 0x8fce00 });
+const movieNight = guild.addRole('Movie night', 3, { color: 0xe69138 });
 
 const general = guild.addChannel('general');
 guild.addChannel('announcements', 'announcement');
 const modLog = guild.addChannel('mod-log');
+const statusChannel = guild.addChannel('server-status');
+const rolesChannel = guild.addChannel('pick-roles');
 const category = voice.addVoiceChannel('Temp Voice', 'category');
 const hub = voice.addVoiceChannel('➕ Join to create');
 
@@ -120,6 +127,106 @@ services.tiers.add(system, { name: 'Regular', roleId: regular, minTenureDays: 30
 services.tiers.add(system, { name: 'Veteran', roleId: veteran, minTenureDays: 365, minActivity: 0 });
 services.voice.addHub(system, { channelId: hub, type: 'public', categoryId: category });
 
+// ── Status embed (fake Uptime Kuma) and role panels ─────────────────────────
+const beat = new Date(now - 30_000).toISOString();
+t.kuma.snapshot = {
+  title: 'Homelab',
+  monitors: [
+    {
+      id: 1,
+      name: 'Tower',
+      group: 'Servers',
+      status: 'up',
+      ping: 3,
+      message: '200 - OK',
+      checkedAt: beat,
+      uptime24h: 1,
+    },
+    {
+      id: 2,
+      name: 'Plex',
+      group: 'Media',
+      status: 'up',
+      ping: 41,
+      message: '200 - OK',
+      checkedAt: beat,
+      uptime24h: 0.9987,
+    },
+    {
+      id: 3,
+      name: 'Minecraft',
+      group: 'Games',
+      status: 'down',
+      ping: null,
+      message: 'connect ECONNREFUSED 192.168.1.20:25565',
+      checkedAt: beat,
+      uptime24h: 0.9612,
+    },
+  ],
+};
+services.settings.update(system, 'demo', (s) => {
+  s.status.kumaUrl = 'http://tower:3001';
+  s.status.slug = 'homelab';
+  s.status.alertChannelId = general;
+  s.status.alertRoles = { '3': mcUpdates };
+});
+await services.status.setChannel(system, statusChannel);
+const games = services.rolePanels.create(system, {
+  title: 'Pick your games',
+  description: 'Get pinged when people are playing.',
+  options: [
+    { roleId: minecraft, label: 'Minecraft', emoji: '⛏️' },
+    { roleId: valorant, label: 'Valorant', emoji: '🎯' },
+    { roleId: rocketLeague, label: 'Rocket League', emoji: '🚗' },
+  ],
+});
+await services.rolePanels.post(system, games.id, rolesChannel);
+services.rolePanels.create(system, {
+  title: 'Notifications',
+  style: 'select',
+  options: [
+    {
+      roleId: mcUpdates,
+      label: 'MC updates',
+      emoji: '🟩',
+      description: 'Minecraft server news and downtime',
+    },
+    { roleId: movieNight, label: 'Movie night', emoji: '🎬', description: 'When a Plex movie night starts' },
+  ],
+});
+
+// ── Issue reports (fake Belltower) ──────────────────────────────────────────
+const helpChannel = guild.addChannel('help');
+await services.belltower.setPanelChannel(system, helpChannel);
+services.settings.update(system, 'demo', (s) => {
+  s.belltower.cooldownSeconds = 0;
+});
+const reporterOf = (id: string) => {
+  const m = guild.members.get(id)!;
+  return { userId: m.userId, username: m.username, displayName: m.displayName };
+};
+await services.belltower.report(reporterOf(memberIds[0]!), {
+  service: '3',
+  details: "Can't connect, says connection refused",
+  channelId: general,
+});
+await services.belltower.report(reporterOf(memberIds[1]!), { service: 'Minecraft', channelId: helpChannel });
+await services.belltower.report(reporterOf(memberIds[2]!), {
+  service: 'Nextcloud',
+  details: 'Photos upload stuck at 99%',
+  channelId: helpChannel,
+});
+await services.belltower.report(reporterOf(memberIds[3]!), {
+  service: 'Plex',
+  details: 'Buffering on every 4K movie',
+  channelId: general,
+});
+t.belltower.setState(2, 'in_progress');
+t.belltower.setState(3, 'done', 'Fixed');
+t.belltower.submit('Plex – Interstellar – stutters', 'Mum');
+t.belltower.submit('Minecraft – server full');
+await services.belltower.poll();
+
 // ── Activity history (60 days) ──────────────────────────────────────────────
 const rows: (typeof activityDaily.$inferInsert)[] = [];
 for (const id of memberIds) {
@@ -135,6 +242,7 @@ for (const id of memberIds) {
       imageCount: Math.floor(rand() * 3 * level),
       linkCount: Math.floor(rand() * 2 * level),
       reactionCount: Math.floor(rand() * 8 * level),
+      reactionsReceivedCount: Math.floor(rand() * 6 * level),
     });
   }
 }

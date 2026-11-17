@@ -28,6 +28,11 @@ const PermissionsPage = lazy(() =>
 );
 const TiersPage = lazy(() => import('./pages/Tiers.js').then((m) => ({ default: m.TiersPage })));
 const VoicePage = lazy(() => import('./pages/Voice.js').then((m) => ({ default: m.VoicePage })));
+const StatusPage = lazy(() => import('./pages/Status.js').then((m) => ({ default: m.StatusPage })));
+const RolePanelsPage = lazy(() =>
+  import('./pages/RolePanels.js').then((m) => ({ default: m.RolePanelsPage })),
+);
+const ReportsPage = lazy(() => import('./pages/Reports.js').then((m) => ({ default: m.ReportsPage })));
 const SettingsPage = lazy(() => import('./pages/Settings.js').then((m) => ({ default: m.SettingsPage })));
 const AuditPage = lazy(() => import('./pages/Audit.js').then((m) => ({ default: m.AuditPage })));
 
@@ -64,6 +69,9 @@ createRoot(document.getElementById('root')!).render(
               <Route path="permissions" element={<PermissionsPage />} />
               <Route path="tiers" element={<TiersPage />} />
               <Route path="voice" element={<VoicePage />} />
+              <Route path="status" element={<StatusPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="role-panels" element={<RolePanelsPage />} />
               <Route path="settings" element={<SettingsPage />} />
               <Route path="audit" element={<AuditPage />} />
               <Route path="*" element={<NotFoundPage />} />

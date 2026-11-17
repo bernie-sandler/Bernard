@@ -189,6 +189,10 @@ export const activityDaily = sqliteTable(
     linkCount: integer('link_count').notNull().default(0),
     /** Reactions added that earned a point. */
     reactionCount: integer('reaction_count').notNull().default(0),
+    /** Voice minutes past the long-session threshold (also counted in voiceMinutes). */
+    voiceLongMinutes: integer('voice_long_minutes').notNull().default(0),
+    /** Reactions from others on this member's messages that earned points. */
+    reactionsReceivedCount: integer('reactions_received_count').notNull().default(0),
   },
   (t) => [
     primaryKey({ columns: [t.guildId, t.userId, t.date] }),
@@ -261,6 +265,102 @@ export const tempChannels = sqliteTable(
     createdAt: createdAt(),
   },
   (t) => [index('temp_channels_guild').on(t.guildId)],
+);
+
+// ── Self-assign role panels ─────────────────────────────────────────────────
+
+export interface RolePanelOption {
+  roleId: string;
+  label: string;
+  emoji: string | null;
+  description: string | null;
+}
+
+export const rolePanels = sqliteTable(
+  'role_panels',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    /** buttons: one toggle button per role. select: a dropdown menu. */
+    style: text('style', { enum: ['buttons', 'select'] })
+      .notNull()
+      .default('buttons'),
+    /** multi: any number of roles. single: picking one removes the panel's other roles. */
+    mode: text('mode', { enum: ['multi', 'single'] })
+      .notNull()
+      .default('multi'),
+    /** Roles offered, in display order. */
+    options: text('options', { mode: 'json' }).notNull().$type<RolePanelOption[]>().default(sql`'[]'`),
+    /** Where the panel is posted; null until posted. */
+    channelId: text('channel_id'),
+    messageId: text('message_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('role_panels_guild').on(t.guildId)],
+);
+
+// ── Issue reports (Belltower) ───────────────────────────────────────────────
+
+export const issueReports = sqliteTable(
+  'issue_reports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    reporterId: text('reporter_id').notNull(),
+    /** Where it was reported; the fallback when the reporter's DMs are closed. */
+    channelId: text('channel_id'),
+    service: text('service').notNull(),
+    /** Uptime Kuma monitor, when the report named one. */
+    monitorId: integer('monitor_id'),
+    details: text('details'),
+    /** Belltower card id and ticket number. */
+    cardId: integer('card_id').notNull(),
+    ticketNo: text('ticket_no'),
+    /** created: opened a ticket. updated: added a note to one already open. */
+    cardStatus: text('card_status', { enum: ['created', 'updated'] }).notNull(),
+    /** Last state read from Belltower: received, in_progress, waiting, done, deleted, missing. */
+    state: text('state').notNull().default('received'),
+    resolution: text('resolution'),
+    createdAt: createdAt(),
+    /** Set once the ticket is done (or gone) and the reporter was told. */
+    closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
+    notifiedVia: text('notified_via', { enum: ['dm', 'channel', 'none'] }),
+  },
+  (t) => [
+    index('issue_reports_open').on(t.guildId, t.closedAt),
+    index('issue_reports_reporter').on(t.reporterId),
+  ],
+);
+
+/**
+ * Tickets people sent through Belltower's submit page, mirrored for the dashboard while the report
+ * panel links there (belltower.mode 'link'). Nobody is notified about these: Bernard doesn't know
+ * who sent them.
+ */
+export const submittedTickets = sqliteTable(
+  'submitted_tickets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    cardId: integer('card_id').notNull(),
+    ticketNo: text('ticket_no'),
+    title: text('title').notNull(),
+    /** The name typed on the submit page. */
+    submitter: text('submitter'),
+    /** received, in_progress, waiting, done, archived, deleted or missing. */
+    state: text('state').notNull(),
+    resolution: text('resolution'),
+    /** When it was sent (Belltower's createdAt). */
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    /** Set while it's done, archived or gone. Cleared if it's reopened. */
+    closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => [
+    uniqueIndex('submitted_tickets_card').on(t.guildId, t.cardId),
+    index('submitted_tickets_open').on(t.guildId, t.closedAt),
+  ],
 );
 
 // ── Dashboard sessions ──────────────────────────────────────────────────────

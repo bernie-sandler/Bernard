@@ -14,6 +14,7 @@ import { DiscordVoice } from './discord/voiceAdapter.js';
 import { startJobs } from './jobs/index.js';
 import type { Scheduler } from './jobs/scheduler.js';
 import { createLogger } from './logger.js';
+import { HttpBelltowerClient } from './services/belltower/client.js';
 import { createContainer } from './services/container.js';
 
 function loadEnvOrExit(): Env {
@@ -48,6 +49,10 @@ async function main(): Promise<void> {
     bot: new DiscordBotInfo(client),
     commands: allCommands,
     sessionTtlMs: env.SESSION_TTL_HOURS * 3_600_000,
+    belltower:
+      env.BELLTOWER_URL && env.BELLTOWER_TOKEN
+        ? new HttpBelltowerClient(env.BELLTOWER_URL, env.BELLTOWER_TOKEN)
+        : null,
   });
   const state = container.services.state;
 

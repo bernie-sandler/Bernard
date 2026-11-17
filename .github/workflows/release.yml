@@ -1,9 +1,9 @@
 name: Release
 
-# Cut a release by bumping "version" in package.json and adding a "## [0.2.0]" section to CHANGELOG.md on dev
-# (it becomes the release notes), merging dev into main, then pushing a matching tag on main:
-#   git tag v0.2.0 && git push origin v0.2.0
-# Release candidates (v0.2.0-rc.1) come from dev through prerelease.yml instead; pushing one by hand fails here.
+# Cut a release by setting "version" in package.json and adding the version's section to CHANGELOG.md on dev (it
+# becomes the release notes), merging dev into main, then pushing a matching tag on main:
+#   git tag v1.2.0 && git push origin v1.2.0
+# Release candidates (v1.2.0-rc.1) come from dev through prerelease.yml instead; pushing one by hand fails here.
 # Older GitHub releases and pre-releases are deleted afterwards (tags are kept): see "Remove superseded releases".
 
 on:
@@ -18,12 +18,15 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  APP_NAME: Bernard
   IMAGE: ghcr.io/${{ github.repository }}
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   verify:
     name: Verify tag
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:
@@ -53,7 +56,7 @@ jobs:
       - name: CHANGELOG has a section for this version
         run: |
           if ! bash .github/scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > /dev/null; then
-            echo "::error::CHANGELOG.md has no \"## [${GITHUB_REF_NAME#v}]\" section to use as release notes"
+            echo "::error::CHANGELOG.md has no section for ${GITHUB_REF_NAME#v} to use as release notes"
             exit 1
           fi
 
@@ -66,6 +69,7 @@ jobs:
     name: Publish Docker image
     needs: checks
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -90,7 +94,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -103,6 +107,7 @@ jobs:
     name: GitHub release
     needs: publish-image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
     steps:
@@ -122,7 +127,7 @@ jobs:
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "$GITHUB_REF_NAME" \
+            --title "$APP_NAME $version" \
             --notes-file notes.md
           printf '%s\n' "$docker_section" >> "$GITHUB_STEP_SUMMARY"
 

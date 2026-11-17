@@ -75,8 +75,12 @@ export interface ActivityCounts {
   images: number;
   /** Messages that earned the link bonus. */
   links: number;
-  /** Reactions that earned points. */
+  /** Reactions given that earned points. */
   reactions: number;
+  /** Reactions received from others that earned points. */
+  reactionsReceived: number;
+  /** Voice minutes past the long-session threshold (included in voiceMinutes). */
+  voiceLongMinutes: number;
 }
 
 /** Short summary of the non-zero counts, e.g. "12 msg · 3 img · 40 voice min". */
@@ -86,6 +90,7 @@ export function activitySummary(c: ActivityCounts): string {
     c.images ? `${c.images} img` : null,
     c.links ? `${c.links} link${c.links === 1 ? '' : 's'}` : null,
     c.reactions ? `${c.reactions} react` : null,
+    c.reactionsReceived ? `${c.reactionsReceived} reacts received` : null,
     c.voiceMinutes ? `${c.voiceMinutes} voice min` : null,
   ].filter(Boolean);
   return parts.join(' · ') || 'No activity';
@@ -98,6 +103,7 @@ export interface ActivityPoints {
   images: number;
   links: number;
   reactions: number;
+  reactionsReceived: number;
 }
 
 export interface MemberListItem extends ActivityCounts {
@@ -350,4 +356,142 @@ export interface AuditEntryDto {
 export interface AuditListResponse {
   items: AuditEntryDto[];
   nextBefore: number | null;
+}
+
+// ── Status (Uptime Kuma) ──
+
+export type MonitorStatusDto = 'up' | 'down' | 'pending' | 'maintenance' | 'unknown';
+
+export interface StatusMonitorDto {
+  id: number;
+  name: string;
+  group: string;
+  status: MonitorStatusDto;
+  ping: number | null;
+  message: string;
+  checkedAt: string | null;
+  uptime24h: number | null;
+  /** Role pinged by this monitor's alerts. */
+  alertRoleId: string | null;
+}
+
+export interface StatusResponse {
+  config: {
+    kumaUrl: string | null;
+    slug: string | null;
+    channelId: string | null;
+    intervalSeconds: number;
+    alertChannelId: string | null;
+  };
+  configured: boolean;
+  title: string | null;
+  monitors: StatusMonitorDto[];
+  fetchedAt: string | null;
+  error: string | null;
+  errorSince: string | null;
+  /** Where the pinned embed is. null when not posted. */
+  message: { channelId: string; messageId: string } | null;
+}
+
+export interface StatusTestResponse {
+  title: string;
+  monitors: number;
+}
+
+// ── Role panels ──
+
+export interface RolePanelOptionDto {
+  roleId: string;
+  label: string;
+  emoji: string | null;
+  description: string | null;
+}
+
+export interface RolePanelDto {
+  id: number;
+  title: string;
+  description: string;
+  style: 'buttons' | 'select';
+  mode: 'multi' | 'single';
+  options: RolePanelOptionDto[];
+  channelId: string | null;
+  channelName: string | null;
+}
+
+export interface PanelRoleDto {
+  id: string;
+  name: string;
+  color: number;
+  /** Why the role can't be offered on a panel; null when it can. */
+  problem: string | null;
+}
+
+export interface RolePanelsResponse {
+  panels: RolePanelDto[];
+  roles: PanelRoleDto[];
+}
+
+// ── Belltower issue reports ──
+
+export type BelltowerPriority = 'P0' | 'P1' | 'P2' | 'P3';
+
+export interface IssueReportDto {
+  id: number;
+  reporterId: string;
+  /** Display name when the member is cached, else null. */
+  reporterName: string | null;
+  channelId: string | null;
+  service: string;
+  monitorId: number | null;
+  details: string | null;
+  cardId: number;
+  ticketNo: string | null;
+  /** created: opened the ticket. updated: added to an open one. */
+  cardStatus: 'created' | 'updated';
+  /** received, in_progress, waiting, done, archived, deleted, missing, duplicate or dismissed. */
+  state: string;
+  resolution: string | null;
+  createdAt: string;
+  closedAt: string | null;
+  notifiedVia: 'dm' | 'channel' | 'none' | null;
+}
+
+/** A ticket sent through Belltower's submit page (link mode). */
+export interface SubmittedTicketDto {
+  cardId: number;
+  ticketNo: string | null;
+  title: string;
+  /** The name typed on the submit page. */
+  submitter: string | null;
+  /** received, in_progress, waiting, done, archived, deleted or missing. */
+  state: string;
+  resolution: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
+export interface BelltowerResponse {
+  /** BELLTOWER_URL and BELLTOWER_TOKEN are set. */
+  configured: boolean;
+  /** The panel can be posted: the API is set up, or (link mode) the submit page link is. */
+  panelReady: boolean;
+  error: string | null;
+  errorSince: string | null;
+  lastPollAt: string | null;
+  config: {
+    enabled: boolean;
+    labels: string[];
+    priority: BelltowerPriority | null;
+    column: string | null;
+    cooldownSeconds: number;
+    panelChannelId: string | null;
+    /** api: Bernard files tickets. link: the panel opens Belltower's submit page. */
+    mode: 'api' | 'link';
+    submitUrl: string | null;
+  };
+  panel: { channelId: string; messageId: string } | null;
+  open: IssueReportDto[];
+  recent: IssueReportDto[];
+  /** Submit-page tickets, read while in link mode. */
+  submitted: { open: SubmittedTicketDto[]; recent: SubmittedTicketDto[] };
 }

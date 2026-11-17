@@ -12,7 +12,10 @@ export type LiveTopic =
   | 'tiers' // tier configuration changed or a sync finished
   | 'hubs' // voice hub configuration changed
   | 'settings'
-  | 'permissions';
+  | 'permissions'
+  | 'status' // the status page was read from Uptime Kuma
+  | 'rolePanels' // a self-assign role panel was created, changed, posted or deleted
+  | 'belltower'; // an issue report was filed or closed, or the Belltower connection changed
 
 export const LIVE_TOPICS: readonly LiveTopic[] = [
   'moderation',
@@ -26,6 +29,9 @@ export const LIVE_TOPICS: readonly LiveTopic[] = [
   'hubs',
   'settings',
   'permissions',
+  'status',
+  'rolePanels',
+  'belltower',
 ];
 
 /** Map an audit action ("permissions.set", "tiers.add", ...) to the topic it changes. */
@@ -33,6 +39,8 @@ export function topicForAudit(action: string): LiveTopic | null {
   if (action.startsWith('permissions.')) return 'permissions';
   if (action.startsWith('tiers.') || action.startsWith('settings.tiers')) return 'tiers';
   if (action.startsWith('voice.hub.')) return 'hubs';
+  if (action.startsWith('rolePanels.')) return 'rolePanels';
+  if (action.startsWith('settings.belltower')) return 'belltower';
   if (action.startsWith('settings.')) return 'settings';
   return null;
 }

@@ -3,6 +3,8 @@ import type { BotInfoPort, GuildPort, MessengerPort, ModerationPort, VoicePort }
 import type { Logger } from '../logger.js';
 import { ActivityService } from './activity.js';
 import { AuditService } from './audit.js';
+import type { BelltowerClient } from './belltower/client.js';
+import { BelltowerService } from './belltower/service.js';
 import { BotStateStore } from './botState.js';
 import { CommandExecutor } from './commands/executor.js';
 import { CommandRegistry } from './commands/registry.js';
@@ -14,8 +16,11 @@ import { MemberService } from './members.js';
 import { MessageCache } from './messageCache.js';
 import { ModerationService } from './moderation/service.js';
 import { PermissionService } from './permissions/service.js';
+import { RolePanelService } from './rolePanels.js';
 import { SessionService } from './sessions.js';
 import { SettingsService } from './settings.js';
+import { HttpKumaClient, type KumaClient } from './status/kuma.js';
+import { StatusService } from './status/service.js';
 import { TierService } from './tiers.js';
 import { VoiceService } from './voice.js';
 
@@ -37,6 +42,9 @@ export interface Services {
   members: MemberService;
   activity: ActivityService;
   tiers: TierService;
+  status: StatusService;
+  rolePanels: RolePanelService;
+  belltower: BelltowerService;
   state: BotStateStore;
   sessions: SessionService;
   live: LiveEvents;
@@ -52,6 +60,10 @@ export interface ContainerDeps {
   voice: VoicePort;
   bot: BotInfoPort;
   commands: CommandDefinition[];
+  /** Uptime Kuma client (default: real HTTP). */
+  kuma?: KumaClient;
+  /** Belltower client; null or omitted when BELLTOWER_URL / BELLTOWER_TOKEN aren't set. */
+  belltower?: BelltowerClient | null;
   /** Dashboard session lifetime (default 7 days). */
   sessionTtlMs?: number;
 }
@@ -112,6 +124,39 @@ export function createContainer(deps: ContainerDeps): Container {
     live,
   });
 
+  const status = new StatusService({
+    guild,
+    messenger: deps.messenger,
+    kuma: deps.kuma ?? new HttpKumaClient(),
+    settings,
+    state,
+    logger,
+    live,
+  });
+  const rolePanels = new RolePanelService({
+    db,
+    guildId,
+    guild,
+    mod: deps.mod,
+    messenger: deps.messenger,
+    audit,
+    logger,
+  });
+
+  const belltower = new BelltowerService({
+    db,
+    guildId,
+    guild,
+    mod: deps.mod,
+    messenger: deps.messenger,
+    settings,
+    state,
+    status,
+    client: deps.belltower ?? null,
+    logger,
+    live,
+  });
+
   const services: Services = {
     db,
     logger,
@@ -129,6 +174,9 @@ export function createContainer(deps: ContainerDeps): Container {
     members,
     activity,
     tiers,
+    status,
+    rolePanels,
+    belltower,
     state,
     sessions,
     live,

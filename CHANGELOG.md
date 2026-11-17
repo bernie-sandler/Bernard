@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
+### Added
+
+- Live status embed fed by Uptime Kuma. Point Bernard at a Kuma status page (the new **Status** dashboard page, or `/status setup`) and it keeps one pinned message up to date with each monitor's state, response time and 24-hour uptime, grouped like the status page. Bernard reads Kuma's public status page API and needs no Kuma login or API key. If Kuma can't be reached, the embed keeps the last known state and says so.
+- Status alerts: with an alert channel set, Bernard posts when a monitor goes down or comes back. Each monitor can ping its own role, for example "MC updates" for the Minecraft server. New commands: `/status show` (`public:status`) and `/status setup`, `post`, `alerts`, `notify`, `refresh` (`config:status`).
+- Self-assign role panels: messages with buttons or a dropdown menu that let members give themselves roles, such as game roles or ping roles like "Movie night". A panel can allow any number of roles or only one. Build them on the new **Role panels** dashboard page and manage posted panels with `/rolepanel list`, `post`, `refresh` and `delete` (`config:rolepanels`). Panels refuse managed roles, roles above the bot, and roles with moderator or admin permissions.
+- Points for reactions received. When someone reacts to your message within a few minutes of you posting it (default 5), you earn `points_per_reaction_received` (default 0.25) per member who reacts; extra emojis from the same member don't count again. To stop farming, a member who receives 20 point-earning reactions within an hour gets a 6-hour grace period with no reaction points at all, given or received. The window, threshold and grace length are on the Settings page.
+- Long voice session multiplier. After `voice_long_session_minutes` of continuous voice time (default 120), each further minute is multiplied by `voice_long_session_multiplier`: below 1 to stop all-day lounge sitting from dominating scores, above 1 to reward long hangouts. The default of 1 keeps scores as they were. Set both on the Settings page or with `/activity settings`.
+- The member page shows reactions given and received separately, in the stats and the activity chart.
+- Issue reports to [Belltower](https://github.com/bernie-sandler/Belltower). Members report a broken service with `/report service [details]` (`public:report`) or a **Report an issue** panel button that opens a short form. Bernard opens a Belltower ticket and DMs them when it's done, with the resolution reason (or mentions them in the channel if their DMs are closed). Reports that name an Uptime Kuma monitor join the ticket Belltower's Kuma webhook opened, so several reports of the same outage share one ticket and everyone hears back when Kuma sees it recover. Turn it on with the new optional `BELLTOWER_URL` and `BELLTOWER_TOKEN` env vars (needs Belltower 1.6 or later and a full token). The new **Issue reports** dashboard page and `/belltower panel` and `/belltower test` (`config:belltower`) manage it.
+- Issue reports can use Belltower's submit page instead. On the Issue reports page, set the **Report an issue** button to open the submit page and paste its link: the panel's button links there and `/report` answers with the link (its `service` option is now optional). With `BELLTOWER_URL` and `BELLTOWER_TOKEN` set and Belltower 1.6.0 or later, **Open reports** and **Recently closed** list the tickets sent through the submit page, with the name typed there and their state. Nobody is messaged about these tickets; the submit page gives each sender a status link.
+- Release candidates are also published as `ghcr.io/bernie-sandler/bernard:rc`, which always points at the newest candidate. Use it to test upcoming releases without changing the image tag each time.
+- The bot asks for the **Pin Messages** permission (to pin the status embed). Existing installs keep working without it; the embed just isn't pinned. Re-invite with `pnpm invite-url` to add it.
+
 ## [0.1.4] - 2026-11-17
 
 ### Added
@@ -119,7 +134,8 @@ First release. A self-hosted Discord bot and admin dashboard for one private ser
 - Tag-driven releases: pushing `vX.Y.Z` publishes a multi-arch (amd64/arm64) image to GHCR and creates a GitHub release.
 - Weekly grouped Dependabot updates, with patch and minor updates auto-merged once checks pass.
 
-[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bernie-sandler/bernard/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...v0.1.2

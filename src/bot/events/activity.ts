@@ -6,8 +6,8 @@ import type { Services } from '../../services/container.js';
 const LINK = /https?:\/\/\S/i;
 
 /**
- * Messages (with image and link bonuses) and reactions earn activity points; joins/leaves/profile
- * changes keep the members table current.
+ * Messages (with image and link bonuses) and reactions (given and received) earn activity points;
+ * joins/leaves/profile changes keep the members table current.
  */
 export function registerActivityEvents(client: Client, services: Services, logger: Logger): void {
   const guildId = services.guild.guildId;
@@ -37,9 +37,14 @@ export function registerActivityEvents(client: Client, services: Services, logge
     safe('activity:reactionAdd', async (reaction, user) => {
       if (reaction.message.guildId !== guildId || user.bot) return;
       const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
-      // Reacting to your own message earns nothing.
-      if (message.author?.id === user.id) return;
-      services.activity.recordReaction(user.id);
+      const author = message.author;
+      services.activity.recordReaction({
+        reactorId: user.id,
+        // Bots, webhooks and system messages don't earn received points.
+        authorId: author && !author.bot && !message.webhookId && !message.system ? author.id : null,
+        messageId: message.id,
+        messageCreatedAt: message.createdTimestamp,
+      });
     }),
   );
 

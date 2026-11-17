@@ -39,6 +39,24 @@ const NAV: NavItem[] = [
     icon: 'M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 0 1 0 7',
   },
   {
+    to: '/status',
+    label: 'Status',
+    nodes: ['config:status'],
+    icon: 'M3 12h4l3-8 4 16 3-8h4',
+  },
+  {
+    to: '/role-panels',
+    label: 'Role panels',
+    nodes: ['config:rolepanels'],
+    icon: 'M20 12l-8 8-9-9V3h8l9 9zM7.5 7.5h.01',
+  },
+  {
+    to: '/reports',
+    label: 'Issue reports',
+    nodes: ['config:belltower'],
+    icon: 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0',
+  },
+  {
     to: '/settings',
     label: 'Settings',
     nodes: ['config:logs', 'config:activity', 'config:settings', 'config:voice', 'config:tiers'],

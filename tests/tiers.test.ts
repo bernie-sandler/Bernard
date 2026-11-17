@@ -7,6 +7,8 @@ import { GUILD_ID, makeActor, OWNER_ID, sid, testContainer } from './helpers.js'
 
 const NOW = new Date('2026-06-01T12:00:00Z');
 const ADMIN = { id: OWNER_ID, source: 'slash' as const };
+/** A reaction on a bot's message: only the reactor can earn. */
+const gave = (reactorId: string) => ({ reactorId, authorId: null, messageId: 'm1', messageCreatedAt: 0 });
 
 // ── Pure logic ──────────────────────────────────────────────────────────────
 
@@ -137,7 +139,15 @@ afterEach(() => {
 });
 
 describe('ActivityService', () => {
-  const none = { messagePoints: 0, voiceMinutes: 0, images: 0, links: 0, reactions: 0 };
+  const none = {
+    messagePoints: 0,
+    voiceMinutes: 0,
+    images: 0,
+    links: 0,
+    reactions: 0,
+    reactionsReceived: 0,
+    voiceLongMinutes: 0,
+  };
 
   it('awards one point per message with a per-user cooldown', () => {
     const a = t.services.activity;
@@ -166,10 +176,10 @@ describe('ActivityService', () => {
   it('awards reactions with their own cooldown', () => {
     const a = t.services.activity;
     a.recordMessage('u1');
-    expect(a.recordReaction('u1')).toBe(true);
-    expect(a.recordReaction('u1')).toBe(false);
+    expect(a.recordReaction(gave('u1')).given).toBe(true);
+    expect(a.recordReaction(gave('u1')).given).toBe(false);
     vi.advanceTimersByTime(60_000);
-    expect(a.recordReaction('u1')).toBe(true);
+    expect(a.recordReaction(gave('u1')).given).toBe(true);
     expect(a.totals('u1')).toEqual({ ...none, messagePoints: 1, reactions: 2, score: 1.5 });
   });
 
@@ -214,6 +224,7 @@ describe('ActivityService', () => {
       .run();
     // 4×1 + 10×0.2 + 2×1 + 2×0.5 + 4×0.25
     expect(a.totals('u1')).toEqual({
+      ...none,
       messagePoints: 4,
       voiceMinutes: 10,
       images: 2,
@@ -235,7 +246,7 @@ describe('ActivityService', () => {
       expect.objectContaining({
         date: dateKey(NOW.getTime()),
         images: 2,
-        points: { messages: 6, voice: 5, images: 0, links: 2, reactions: 4 },
+        points: { messages: 6, voice: 5, images: 0, links: 2, reactions: 4, reactionsReceived: 0 },
       }),
     ]);
   });
@@ -273,7 +284,7 @@ describe('ActivityService', () => {
     const spy = vi.spyOn(t.services.tiers, 'queueEvaluate');
     t.services.activity.recordMessage('u1');
     expect(spy).not.toHaveBeenCalled();
-    t.services.activity.recordReaction('u1');
+    t.services.activity.recordReaction(gave('u1'));
     expect(spy).toHaveBeenCalledWith('u1');
   });
 

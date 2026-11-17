@@ -1,6 +1,6 @@
 name: Dev image
 
-# Publishes ghcr.io/<owner>/bernard:dev from the tip of the dev branch, so a test container can follow dev without
+# Publishes ghcr.io/<owner>/<repository>:dev from the tip of the dev branch, so a test container can follow dev without
 # version bumps or tags. Code reaches dev through pull requests that already passed CI, so CI isn't run again here.
 # Version images are only published by release.yml (releases, "latest") and prerelease.yml (release candidates).
 
@@ -19,11 +19,13 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  PLATFORMS: linux/amd64,linux/arm64
 
 jobs:
   publish:
     name: Publish :dev image
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     permissions:
       contents: read
       packages: write
@@ -45,7 +47,7 @@ jobs:
       - uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64,linux/arm64
+          platforms: ${{ env.PLATFORMS }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

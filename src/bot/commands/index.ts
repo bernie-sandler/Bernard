@@ -1,9 +1,12 @@
 import type { CommandDefinition } from '../../services/commands/types.js';
+import { belltowerCommands } from './belltower.js';
 import { coreCommands } from './core.js';
 import { infoCommands } from './info.js';
 import { logsCommand } from './logs.js';
 import { moderationCommands } from './moderation.js';
 import { permissionCommands } from './permissions.js';
+import { roleCommands } from './roles.js';
+import { statusCommands } from './status.js';
 import { tierCommands } from './tiers.js';
 import { voiceCommands } from './voice.js';
 
@@ -16,4 +19,7 @@ export const allCommands: CommandDefinition[] = [
   logsCommand,
   ...voiceCommands,
   ...tierCommands,
+  ...statusCommands,
+  ...roleCommands,
+  ...belltowerCommands,
 ];

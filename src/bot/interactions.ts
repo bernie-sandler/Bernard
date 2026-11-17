@@ -1,17 +1,28 @@
 import {
+  ActionRowBuilder,
   type AutocompleteInteraction,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
   type GuildMember,
   type Interaction,
   type InteractionReplyOptions,
   MessageFlags,
+  ModalBuilder,
+  type ModalSubmitInteraction,
+  type StringSelectMenuInteraction,
+  TextInputBuilder,
+  TextInputStyle,
 } from 'discord.js';
 import { toEmbed, toMemberInfo } from '../discord/adapters.js';
+import { describeDiscordError } from '../discord/errors.js';
 import type { Logger } from '../logger.js';
+import { REPORT_BUTTON_ID, REPORT_MODAL_ID } from '../services/belltower/service.js';
 import type { CommandExecutor } from '../services/commands/executor.js';
 import type { FlatCommand } from '../services/commands/registry.js';
 import type { Actor } from '../services/commands/types.js';
 import type { Services } from '../services/container.js';
+import { isUserError } from '../services/errors.js';
+import { parsePanelCustomId } from '../services/rolePanels.js';
 import type { CommandResult } from '../shared/commandResult.js';
 
 export function actorFromMember(member: GuildMember): Actor {
@@ -168,10 +179,112 @@ export function createInteractionHandler(deps: {
     }
   }
 
+  /** Role panel buttons and menus. Anyone who can see the panel may use it. */
+  async function handleRolePanel(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
+    const parsed = parsePanelCustomId(i.customId);
+    if (!parsed) return; // not ours
+    if (!i.inCachedGuild() || i.guildId !== services.guild.guildId) {
+      await i.reply({ content: 'This panel only works in its home server.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    // Acknowledge first: role changes are API calls and Discord allows only 3s for the first reply.
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    let content: string;
+    try {
+      content =
+        parsed.kind === 'button'
+          ? await services.rolePanels.handleButton(i.user.id, parsed.panelId, parsed.roleId)
+          : await services.rolePanels.handleSelect(
+              i.user.id,
+              parsed.panelId,
+              i.isStringSelectMenu() ? i.values : [],
+            );
+    } catch (err) {
+      const readable = isUserError(err) ? err.message : describeDiscordError(err);
+      if (!readable) logger.error({ err, customId: i.customId }, 'Role panel interaction failed');
+      content = readable ?? 'Something went wrong.';
+    }
+    await i.editReply({ content, allowedMentions: { parse: [] } });
+  }
+
+  /** The report panel's button: open the report form. A modal must be the first reply, so no defer. */
+  async function handleReportButton(i: ButtonInteraction): Promise<void> {
+    if (!i.inCachedGuild() || i.guildId !== services.guild.guildId) {
+      await i.reply({ content: 'This panel only works in its home server.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    // Say no before the form, not after the member filled it in.
+    const blocked = services.permissions.check(actorFromMember(i.member), 'public:report').allowed
+      ? services.belltower.unavailableReason()
+      : "You don't have permission (`public:report`).";
+    if (blocked) {
+      await i.reply({ content: blocked, flags: MessageFlags.Ephemeral });
+      return;
+    }
+    const service = new TextInputBuilder()
+      .setCustomId('service')
+      .setLabel("What isn't working?")
+      .setPlaceholder('e.g. Plex')
+      .setStyle(TextInputStyle.Short)
+      .setRequired(true)
+      .setMaxLength(100);
+    const details = new TextInputBuilder()
+      .setCustomId('details')
+      .setLabel('Details')
+      .setPlaceholder('What happens, error messages, since when')
+      .setStyle(TextInputStyle.Paragraph)
+      .setRequired(false)
+      .setMaxLength(1000);
+    await i.showModal(
+      new ModalBuilder()
+        .setCustomId(REPORT_MODAL_ID)
+        .setTitle('Report an issue')
+        .addComponents(
+          new ActionRowBuilder<TextInputBuilder>().addComponents(service),
+          new ActionRowBuilder<TextInputBuilder>().addComponents(details),
+        ),
+    );
+  }
+
+  /** The submitted report form. Same rules as /report (public:report). */
+  async function handleReportModal(i: ModalSubmitInteraction): Promise<void> {
+    if (!i.inCachedGuild() || i.guildId !== services.guild.guildId) return;
+    const actor = actorFromMember(i.member);
+    if (!services.permissions.check(actor, 'public:report').allowed) {
+      await i.reply({
+        content: "You don't have permission (`public:report`).",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    let content: string;
+    try {
+      content = await services.belltower.report(
+        { userId: actor.userId, username: actor.username, displayName: actor.displayName },
+        {
+          service: i.fields.getTextInputValue('service'),
+          details: i.fields.getTextInputValue('details'),
+          channelId: i.channelId,
+        },
+      );
+    } catch (err) {
+      if (!isUserError(err)) logger.error({ err }, 'Report from the panel failed');
+      content = isUserError(err) ? err.message : 'Something went wrong.';
+    }
+    await i.editReply({ content, allowedMentions: { parse: [] } });
+  }
+
   return async (interaction: Interaction): Promise<void> => {
     try {
       if (interaction.isChatInputCommand()) await handleChatInput(interaction);
       else if (interaction.isAutocomplete()) await handleAutocomplete(interaction);
+      else if (interaction.isButton() && interaction.customId === REPORT_BUTTON_ID) {
+        await handleReportButton(interaction);
+      } else if (interaction.isModalSubmit() && interaction.customId === REPORT_MODAL_ID) {
+        await handleReportModal(interaction);
+      } else if (interaction.isButton() || interaction.isStringSelectMenu())
+        await handleRolePanel(interaction);
     } catch (err) {
       logger.error({ err }, 'Interaction handler crashed');
     }

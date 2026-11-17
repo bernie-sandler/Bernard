@@ -16,9 +16,21 @@ import type {
   VoicePort,
 } from '../src/discord/ports.js';
 import { nullLogger } from '../src/logger.js';
+import type {
+  BelltowerClient,
+  ChangedTickets,
+  ListedTicket,
+  NewCard,
+  OpenedCard,
+  TicketInfo,
+  TicketState,
+} from '../src/services/belltower/client.js';
+import { parseTicketPage } from '../src/services/belltower/client.js';
 import type { Actor, CommandDefinition } from '../src/services/commands/types.js';
 import { createContainer } from '../src/services/container.js';
+import type { KumaClient, KumaSnapshot } from '../src/services/status/kuma.js';
 import type { ResultEmbed } from '../src/shared/commandResult.js';
+import type { OutgoingMessage } from '../src/shared/messages.js';
 
 export const GUILD_ID = '100000000000000001';
 export const OWNER_ID = '200000000000000001';
@@ -106,7 +118,7 @@ export class FakeGuild implements GuildPort {
   }
   addRole(name: string, position = 1, extra: Partial<RoleInfo> = {}): string {
     const id = sid();
-    this.roles.set(id, { id, name, position, managed: false, color: 0, ...extra });
+    this.roles.set(id, { id, name, position, managed: false, color: 0, elevated: false, ...extra });
     return id;
   }
   addChannel(name: string, kind: ChannelInfo['kind'] = 'text'): string {
@@ -222,10 +234,167 @@ export class FakeModeration implements ModerationPort {
 export class FakeMessenger implements MessengerPort {
   sent: { channelId: string; embed: ResultEmbed }[] = [];
   fail = false;
+  /** Messages sent with send(), by ID (edits replace the stored message). */
+  messages = new Map<string, { channelId: string; msg: OutgoingMessage; pinned: boolean }>();
+  /** Channels send() treats as missing or not postable. */
+  unsendable = new Set<string>();
+  canPin = true;
+  edits = 0;
+
   async sendEmbed(channelId: string, embed: ResultEmbed): Promise<string | null> {
     if (this.fail) throw new Error('send failed');
     this.sent.push({ channelId, embed });
     return sid();
+  }
+  async send(channelId: string, msg: OutgoingMessage): Promise<string | null> {
+    if (this.fail) throw new Error('send failed');
+    if (this.unsendable.has(channelId)) return null;
+    const id = sid();
+    this.messages.set(id, { channelId, msg, pinned: false });
+    return id;
+  }
+  async edit(channelId: string, messageId: string, msg: OutgoingMessage): Promise<boolean> {
+    const m = this.messages.get(messageId);
+    if (!m || m.channelId !== channelId) return false;
+    m.msg = msg;
+    this.edits++;
+    return true;
+  }
+  async pin(_channelId: string, messageId: string): Promise<boolean> {
+    const m = this.messages.get(messageId);
+    if (!m || !this.canPin) return false;
+    m.pinned = true;
+    return true;
+  }
+  async delete(_channelId: string, messageId: string): Promise<void> {
+    this.messages.delete(messageId);
+  }
+  /** Messages currently in a channel, oldest first. */
+  inChannel(channelId: string) {
+    return [...this.messages.entries()]
+      .filter(([, m]) => m.channelId === channelId)
+      .map(([id, m]) => ({ id, ...m }));
+  }
+}
+
+/** Uptime Kuma stand-in: set `snapshot`, or `error` to make reads fail. */
+export class FakeKuma implements KumaClient {
+  snapshot: KumaSnapshot = { title: 'Homelab', monitors: [] };
+  error: Error | null = null;
+  reads = 0;
+  async fetchStatusPage(): Promise<KumaSnapshot> {
+    this.reads++;
+    if (this.error) throw this.error;
+    return structuredClone(this.snapshot);
+  }
+}
+
+/**
+ * Belltower stand-in. openCard dedupes on dedupeKey like the real API; add a submit-page ticket with
+ * submit, set a ticket's state with setState, remove it with `tickets.delete`, or set `error` to make
+ * every call fail. `listChanged` answers like ?updatedSince= on a clock that `now` controls.
+ */
+export class FakeBelltower implements BelltowerClient {
+  opened: NewCard[] = [];
+  tickets = new Map<number, ListedTicket & { dedupeKey?: string }>();
+  error: Error | null = null;
+  reads = 0;
+  /** The `since` of each listChanged call. */
+  listed: string[] = [];
+  /** Leave `source` out of listChanged answers, like Belltower before 1.6.0. */
+  old = false;
+  now = Date.now();
+  private nextId = 1;
+
+  private stamp(): string {
+    return new Date(this.now).toISOString();
+  }
+
+  /** A ticket sent through the submit page. */
+  submit(title: string, submitter: string | null = null): ListedTicket {
+    const id = this.nextId++;
+    const ticket: ListedTicket = {
+      id,
+      ticketNo: `261117-${id}`,
+      title,
+      state: 'received',
+      resolution: null,
+      archivedAt: null,
+      deletedAt: null,
+      createdAt: this.stamp(),
+      updatedAt: this.stamp(),
+      source: 'submit',
+      submitter,
+    };
+    this.tickets.set(id, ticket);
+    return ticket;
+  }
+
+  async listChanged(since: string): Promise<ChangedTickets> {
+    this.reads++;
+    this.listed.push(since);
+    if (this.error) throw this.error;
+    const cards = [...this.tickets.values()]
+      .filter((t) => t.updatedAt >= since)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id - b.id)
+      .map(({ dedupeKey: _key, source, submitter, ...t }) => (this.old ? t : { ...t, source, submitter }));
+    // Through the real parser, so an old Belltower fails the way it would.
+    const { tickets, generatedAt } = parseTicketPage({
+      cards,
+      more: false,
+      next: null,
+      generatedAt: this.stamp(),
+    });
+    return { tickets, generatedAt };
+  }
+
+  async openCard(card: NewCard): Promise<OpenedCard> {
+    if (this.error) throw this.error;
+    this.opened.push(card);
+    if (card.dedupeKey) {
+      for (const t of this.tickets.values()) {
+        if (t.dedupeKey === card.dedupeKey && t.state !== 'done' && !t.deletedAt) {
+          return { status: 'updated', id: t.id, ticketNo: t.ticketNo, title: t.title };
+        }
+      }
+    }
+    const id = this.nextId++;
+    const ticket = {
+      id,
+      ticketNo: `261117-${id}`,
+      title: card.title,
+      state: 'received' as const,
+      resolution: null,
+      archivedAt: null,
+      deletedAt: null,
+      createdAt: this.stamp(),
+      updatedAt: this.stamp(),
+      source: 'api',
+      submitter: null,
+      ...(card.dedupeKey ? { dedupeKey: card.dedupeKey } : {}),
+    };
+    this.tickets.set(id, ticket);
+    return { status: 'created', id, ticketNo: ticket.ticketNo, title: card.title };
+  }
+  async getCards(ids: number[]): Promise<TicketInfo[]> {
+    this.reads++;
+    if (this.error) throw this.error;
+    return ids.flatMap((id) => {
+      const t = this.tickets.get(id);
+      if (!t) return [];
+      const { id: _id, ticketNo, title, state, resolution, archivedAt, deletedAt } = t;
+      return [{ id, ticketNo, title, state, resolution, archivedAt, deletedAt }];
+    });
+  }
+  async ping(): Promise<void> {
+    if (this.error) throw this.error;
+  }
+  setState(id: number, state: TicketState, resolution: string | null = null) {
+    const t = this.tickets.get(id);
+    if (!t) throw new Error(`no ticket ${id}`);
+    t.state = state;
+    t.resolution = resolution;
+    t.updatedAt = this.stamp();
   }
 }
 
@@ -350,12 +519,17 @@ export function makeActor(member: MemberInfo): Actor {
   };
 }
 
-export function testContainer(commands: CommandDefinition[] = allCommands) {
+export function testContainer(
+  commands: CommandDefinition[] = allCommands,
+  opts: { belltower?: boolean } = {},
+) {
   const dbHandle = memoryDb();
   const guild = new FakeGuild();
   const messenger = new FakeMessenger();
   const mod = new FakeModeration(guild);
   const voice = new FakeVoice(guild);
+  const kuma = new FakeKuma();
+  const belltower = new FakeBelltower();
   const container = createContainer({
     db: dbHandle.db,
     logger: nullLogger,
@@ -365,6 +539,18 @@ export function testContainer(commands: CommandDefinition[] = allCommands) {
     voice,
     bot: new FakeBot(),
     commands,
+    kuma,
+    belltower: opts.belltower === false ? null : belltower,
   });
-  return { ...container, guild, messenger, mod, voice, db: dbHandle.db, close: dbHandle.close };
+  return {
+    ...container,
+    guild,
+    messenger,
+    mod,
+    voice,
+    kuma,
+    belltower,
+    db: dbHandle.db,
+    close: dbHandle.close,
+  };
 }
