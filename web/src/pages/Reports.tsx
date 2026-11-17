@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useEffect, useState } from 'react';
-import type { BelltowerPriority, BelltowerResponse, IssueReportDto } from '../../../src/shared/api.js';
+import type {
+  BelltowerPriority,
+  BelltowerResponse,
+  IssueReportDto,
+  SubmittedTicketDto,
+} from '../../../src/shared/api.js';
 import { api } from '../api.js';
 import { PageHeader } from '../components/Layout.js';
 import { ChannelSelect } from '../components/pickers.js';
@@ -57,11 +62,16 @@ function ConnectionCard({ d }: { d: BelltowerResponse }) {
     onError: (e: Error) => setMessage({ ok: false, text: e.message }),
   });
 
+  const link = d.config.mode === 'link';
   if (!d.configured) {
     return (
       <Card title="Belltower">
         <div className="space-y-2 text-sm text-slate-400">
-          <p>Reporting is off. To turn it on:</p>
+          <p>
+            {link
+              ? 'The report panel links to your submit page and works without this. To list what comes in through it here:'
+              : 'Reporting is off. To turn it on:'}
+          </p>
           <ol className="list-decimal space-y-1 pl-5">
             <li>
               In Belltower (1.6 or later), open <strong>Account → Your tokens</strong> and create a{' '}
@@ -79,8 +89,17 @@ function ConnectionCard({ d }: { d: BelltowerResponse }) {
     <Card title="Belltower">
       <div className="space-y-3">
         <p className="text-sm text-slate-400">
-          Members report problems with <code>/report</code> or the report panel. Bernard opens a Belltower
-          ticket and tells them when it's done.
+          {link ? (
+            <>
+              The report panel and <code>/report</code> send members to Belltower's submit page. Bernard lists
+              the tickets that come in through it.
+            </>
+          ) : (
+            <>
+              Members report problems with <code>/report</code> or the report panel. Bernard opens a Belltower
+              ticket and tells them when it's done.
+            </>
+          )}
           {d.lastPollAt && ` Last checked ${relativeTime(d.lastPollAt)}.`}
         </p>
         {d.error && (
@@ -108,8 +127,12 @@ function OptionsCard({ d }: { d: BelltowerResponse }) {
   const [priority, setPriority] = useState<string>(d.config.priority ?? '');
   const [column, setColumn] = useState(d.config.column ?? '');
   const [cooldown, setCooldown] = useState(String(d.config.cooldownSeconds));
+  const [mode, setMode] = useState(d.config.mode);
+  const [submitUrl, setSubmitUrl] = useState(d.config.submitUrl ?? '');
 
   useEffect(() => {
+    setMode(d.config.mode);
+    setSubmitUrl(d.config.submitUrl ?? '');
     setEnabled(d.config.enabled);
     setLabels(d.config.labels.join(', '));
     setPriority(d.config.priority ?? '');
@@ -130,6 +153,8 @@ function OptionsCard({ d }: { d: BelltowerResponse }) {
           priority: (priority || null) as BelltowerPriority | null,
           column: column.trim() || null,
           cooldownSeconds: Number(cooldown),
+          mode,
+          submitUrl: submitUrl.trim() || null,
         },
       }),
     onSuccess: (r) => {
@@ -143,16 +168,42 @@ function OptionsCard({ d }: { d: BelltowerResponse }) {
     save.mutate();
   };
 
+  const link = mode === 'link';
   return (
-    <Card title="New tickets">
+    <Card title="How members report">
       <form onSubmit={submit} className="space-y-4">
+        <Field label="The Report an issue button">
+          <Select value={mode} onChange={(e) => setMode(e.target.value as 'api' | 'link')}>
+            <option value="api">Opens a form in Discord; Bernard files the ticket</option>
+            <option value="link">Opens Belltower's submit page</option>
+          </Select>
+        </Field>
+        {link && (
+          <Field
+            label="Submit page link"
+            hint="From Settings → Submit page in Belltower. Everyone who can see the panel can open it. Members aren't messaged when their ticket is done; the submit page gives them a status link instead."
+          >
+            <Input
+              type="url"
+              value={submitUrl}
+              onChange={(e) => setSubmitUrl(e.target.value)}
+              placeholder="https://belltower.example/submit/…"
+              maxLength={500}
+              required
+            />
+          </Field>
+        )}
         <Toggle
           checked={enabled}
           onChange={setEnabled}
           label="Accept reports"
-          hint="Off pauses /report and the panel. Reports already filed are still followed up."
+          hint={
+            link
+              ? 'Off removes the button from the panel. The submit page itself stays open.'
+              : 'Off pauses /report and the panel. Reports already filed are still followed up.'
+          }
         />
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className={`grid gap-3 sm:grid-cols-2 ${link ? 'hidden' : ''}`}>
           <Field label="Tags" hint="Comma-separated. Missing tags are created in Belltower.">
             <Input value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="Discord" />
           </Field>
@@ -207,15 +258,17 @@ function PanelCard({ d }: { d: BelltowerResponse }) {
     <Card title="Report panel">
       <div className="space-y-3">
         <p className="text-sm text-slate-400">
-          A message with a <strong>Report an issue</strong> button. It opens a short form, so members don't
-          need to know the command.
+          A message with a <strong>Report an issue</strong> button.{' '}
+          {d.config.mode === 'link'
+            ? "It opens Belltower's submit page."
+            : "It opens a short form, so members don't need to know the command."}
         </p>
         <Field label="Channel">
           <ChannelSelect
             value={channelId}
             onChange={setChannel}
             kinds={['text', 'announcement']}
-            disabled={!d.configured}
+            disabled={!d.panelReady}
           />
         </Field>
         <div className="flex justify-end gap-2">
@@ -227,7 +280,7 @@ function PanelCard({ d }: { d: BelltowerResponse }) {
           <Button
             onClick={() => move.mutate(channelId)}
             loading={move.isPending}
-            disabled={!d.configured || !channelId}
+            disabled={!d.panelReady || !channelId}
           >
             {d.panel && d.panel.channelId === channelId ? 'Re-post panel' : 'Post panel'}
           </Button>
@@ -309,6 +362,46 @@ function ReportTable({ rows, open }: { rows: IssueReportDto[]; open: boolean }) 
   );
 }
 
+function SubmittedTable({ rows, open }: { rows: SubmittedTicketDto[]; open: boolean }) {
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full text-left">
+        <thead className="text-xs text-slate-500 uppercase">
+          <tr>
+            <th className="pb-1 font-medium">Ticket</th>
+            <th className="pb-1 font-medium">Sent by</th>
+            <th className="pb-1 font-medium">State</th>
+            <th className="pb-1 font-medium">{open ? 'Sent' : 'Closed'}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => {
+            const badge = STATE_BADGE[r.state] ?? { tone: 'gray' as const, label: r.state };
+            return (
+              <tr key={r.cardId} className="border-t border-slate-800 align-top">
+                <td className="py-2 pr-3">
+                  <div className="font-medium">{r.title}</div>
+                  <div className="text-xs text-slate-500 tabular-nums">{r.ticketNo ?? `#${r.cardId}`}</div>
+                </td>
+                <td className="py-2 pr-3 text-sm">
+                  {r.submitter ?? <span className="text-slate-500">–</span>}
+                </td>
+                <td className="py-2 pr-3">
+                  <Badge tone={badge.tone}>{badge.label}</Badge>
+                  {r.resolution && <div className="mt-1 text-xs text-slate-500">{r.resolution}</div>}
+                </td>
+                <td className="py-2 pr-3 text-sm text-slate-400">
+                  {relativeTime(open ? r.createdAt : (r.closedAt ?? r.createdAt))}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function ReportsPage() {
   const queryClient = useQueryClient();
   const q = useQuery({
@@ -324,15 +417,16 @@ export function ReportsPage() {
   if (q.isPending) return <FullPageSpinner />;
   if (q.error) return <ErrorBox error={q.error} onRetry={() => q.refetch()} />;
   const d = q.data;
+  const link = d.config.mode === 'link';
 
   return (
     <>
       <PageHeader
         title="Issue reports"
-        subtitle="Problems members report in Discord, filed as Belltower tickets. Reporters hear back when they're fixed."
+        subtitle="Problems members report from Discord, as Belltower tickets."
         actions={
           d.configured &&
-          d.open.length > 0 && (
+          (link || d.open.length > 0) && (
             <Button variant="secondary" onClick={() => poll.mutate()} loading={poll.isPending}>
               Check now
             </Button>
@@ -345,20 +439,48 @@ export function ReportsPage() {
         <div className="lg:col-span-2">
           <OptionsCard d={d} />
         </div>
-        <Card className="lg:col-span-2" title={`Open reports (${d.open.length})`}>
-          {d.open.length === 0 ? (
-            <EmptyState>No open reports.</EmptyState>
-          ) : (
-            <ReportTable rows={d.open} open />
-          )}
-        </Card>
-        <Card className="lg:col-span-2" title="Recently closed">
-          {d.recent.length === 0 ? (
-            <EmptyState>Nothing closed yet.</EmptyState>
-          ) : (
-            <ReportTable rows={d.recent} open={false} />
-          )}
-        </Card>
+        {link ? (
+          <>
+            <Card className="lg:col-span-2" title={`Open reports (${d.submitted.open.length})`}>
+              {!d.configured ? (
+                <EmptyState>Connect Bernard to Belltower to list submit-page tickets here.</EmptyState>
+              ) : d.submitted.open.length === 0 ? (
+                <EmptyState>No open tickets from the submit page.</EmptyState>
+              ) : (
+                <SubmittedTable rows={d.submitted.open} open />
+              )}
+            </Card>
+            {d.open.length > 0 && (
+              <Card className="lg:col-span-2" title={`Still followed from /report (${d.open.length})`}>
+                <ReportTable rows={d.open} open />
+              </Card>
+            )}
+            <Card className="lg:col-span-2" title="Recently closed">
+              {d.submitted.recent.length === 0 ? (
+                <EmptyState>Nothing closed yet.</EmptyState>
+              ) : (
+                <SubmittedTable rows={d.submitted.recent} open={false} />
+              )}
+            </Card>
+          </>
+        ) : (
+          <>
+            <Card className="lg:col-span-2" title={`Open reports (${d.open.length})`}>
+              {d.open.length === 0 ? (
+                <EmptyState>No open reports.</EmptyState>
+              ) : (
+                <ReportTable rows={d.open} open />
+              )}
+            </Card>
+            <Card className="lg:col-span-2" title="Recently closed">
+              {d.recent.length === 0 ? (
+                <EmptyState>Nothing closed yet.</EmptyState>
+              ) : (
+                <ReportTable rows={d.recent} open={false} />
+              )}
+            </Card>
+          </>
+        )}
       </div>
     </>
   );

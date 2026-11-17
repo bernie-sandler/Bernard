@@ -223,6 +223,8 @@ await services.belltower.report(reporterOf(memberIds[3]!), {
 });
 t.belltower.setState(2, 'in_progress');
 t.belltower.setState(3, 'done', 'Fixed');
+t.belltower.submit('Plex – Interstellar – stutters', 'Mum');
+t.belltower.submit('Minecraft – server full');
 await services.belltower.poll();
 
 // ── Activity history (60 days) ──────────────────────────────────────────────

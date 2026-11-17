@@ -456,9 +456,25 @@ export interface IssueReportDto {
   notifiedVia: 'dm' | 'channel' | 'none' | null;
 }
 
+/** A ticket sent through Belltower's submit page (link mode). */
+export interface SubmittedTicketDto {
+  cardId: number;
+  ticketNo: string | null;
+  title: string;
+  /** The name typed on the submit page. */
+  submitter: string | null;
+  /** received, in_progress, waiting, done, archived, deleted or missing. */
+  state: string;
+  resolution: string | null;
+  createdAt: string;
+  closedAt: string | null;
+}
+
 export interface BelltowerResponse {
   /** BELLTOWER_URL and BELLTOWER_TOKEN are set. */
   configured: boolean;
+  /** The panel can be posted: the API is set up, or (link mode) the submit page link is. */
+  panelReady: boolean;
   error: string | null;
   errorSince: string | null;
   lastPollAt: string | null;
@@ -469,8 +485,13 @@ export interface BelltowerResponse {
     column: string | null;
     cooldownSeconds: number;
     panelChannelId: string | null;
+    /** api: Bernard files tickets. link: the panel opens Belltower's submit page. */
+    mode: 'api' | 'link';
+    submitUrl: string | null;
   };
   panel: { channelId: string; messageId: string } | null;
   open: IssueReportDto[];
   recent: IssueReportDto[];
+  /** Submit-page tickets, read while in link mode. */
+  submitted: { open: SubmittedTicketDto[]; recent: SubmittedTicketDto[] };
 }

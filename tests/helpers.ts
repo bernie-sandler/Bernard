@@ -18,11 +18,14 @@ import type {
 import { nullLogger } from '../src/logger.js';
 import type {
   BelltowerClient,
+  ChangedTickets,
+  ListedTicket,
   NewCard,
   OpenedCard,
   TicketInfo,
   TicketState,
 } from '../src/services/belltower/client.js';
+import { parseTicketPage } from '../src/services/belltower/client.js';
 import type { Actor, CommandDefinition } from '../src/services/commands/types.js';
 import { createContainer } from '../src/services/container.js';
 import type { KumaClient, KumaSnapshot } from '../src/services/status/kuma.js';
@@ -287,15 +290,63 @@ export class FakeKuma implements KumaClient {
 }
 
 /**
- * Belltower stand-in. openCard dedupes on dedupeKey like the real API; set a ticket's state with
- * setState, remove it with `tickets.delete`, or set `error` to make every call fail.
+ * Belltower stand-in. openCard dedupes on dedupeKey like the real API; add a submit-page ticket with
+ * submit, set a ticket's state with setState, remove it with `tickets.delete`, or set `error` to make
+ * every call fail. `listChanged` answers like ?updatedSince= on a clock that `now` controls.
  */
 export class FakeBelltower implements BelltowerClient {
   opened: NewCard[] = [];
-  tickets = new Map<number, TicketInfo & { dedupeKey?: string }>();
+  tickets = new Map<number, ListedTicket & { dedupeKey?: string }>();
   error: Error | null = null;
   reads = 0;
+  /** The `since` of each listChanged call. */
+  listed: string[] = [];
+  /** Leave `source` out of listChanged answers, like Belltower before 1.6.0. */
+  old = false;
+  now = Date.now();
   private nextId = 1;
+
+  private stamp(): string {
+    return new Date(this.now).toISOString();
+  }
+
+  /** A ticket sent through the submit page. */
+  submit(title: string, submitter: string | null = null): ListedTicket {
+    const id = this.nextId++;
+    const ticket: ListedTicket = {
+      id,
+      ticketNo: `261117-${id}`,
+      title,
+      state: 'received',
+      resolution: null,
+      archivedAt: null,
+      deletedAt: null,
+      createdAt: this.stamp(),
+      updatedAt: this.stamp(),
+      source: 'submit',
+      submitter,
+    };
+    this.tickets.set(id, ticket);
+    return ticket;
+  }
+
+  async listChanged(since: string): Promise<ChangedTickets> {
+    this.reads++;
+    this.listed.push(since);
+    if (this.error) throw this.error;
+    const cards = [...this.tickets.values()]
+      .filter((t) => t.updatedAt >= since)
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id - b.id)
+      .map(({ dedupeKey: _key, source, submitter, ...t }) => (this.old ? t : { ...t, source, submitter }));
+    // Through the real parser, so an old Belltower fails the way it would.
+    const { tickets, generatedAt } = parseTicketPage({
+      cards,
+      more: false,
+      next: null,
+      generatedAt: this.stamp(),
+    });
+    return { tickets, generatedAt };
+  }
 
   async openCard(card: NewCard): Promise<OpenedCard> {
     if (this.error) throw this.error;
@@ -316,6 +367,10 @@ export class FakeBelltower implements BelltowerClient {
       resolution: null,
       archivedAt: null,
       deletedAt: null,
+      createdAt: this.stamp(),
+      updatedAt: this.stamp(),
+      source: 'api',
+      submitter: null,
       ...(card.dedupeKey ? { dedupeKey: card.dedupeKey } : {}),
     };
     this.tickets.set(id, ticket);
@@ -327,8 +382,8 @@ export class FakeBelltower implements BelltowerClient {
     return ids.flatMap((id) => {
       const t = this.tickets.get(id);
       if (!t) return [];
-      const { dedupeKey: _key, ...info } = t;
-      return [{ ...info }];
+      const { id: _id, ticketNo, title, state, resolution, archivedAt, deletedAt } = t;
+      return [{ id, ticketNo, title, state, resolution, archivedAt, deletedAt }];
     });
   }
   async ping(): Promise<void> {
@@ -339,6 +394,7 @@ export class FakeBelltower implements BelltowerClient {
     if (!t) throw new Error(`no ticket ${id}`);
     t.state = state;
     t.resolution = resolution;
+    t.updatedAt = this.stamp();
   }
 }
 

@@ -334,6 +334,35 @@ export const issueReports = sqliteTable(
   ],
 );
 
+/**
+ * Tickets people sent through Belltower's submit page, mirrored for the dashboard while the report
+ * panel links there (belltower.mode 'link'). Nobody is notified about these: Bernard doesn't know
+ * who sent them.
+ */
+export const submittedTickets = sqliteTable(
+  'submitted_tickets',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    cardId: integer('card_id').notNull(),
+    ticketNo: text('ticket_no'),
+    title: text('title').notNull(),
+    /** The name typed on the submit page. */
+    submitter: text('submitter'),
+    /** received, in_progress, waiting, done, archived, deleted or missing. */
+    state: text('state').notNull(),
+    resolution: text('resolution'),
+    /** When it was sent (Belltower's createdAt). */
+    createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+    /** Set while it's done, archived or gone. Cleared if it's reopened. */
+    closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => [
+    uniqueIndex('submitted_tickets_card').on(t.guildId, t.cardId),
+    index('submitted_tickets_open').on(t.guildId, t.closedAt),
+  ],
+);
+
 // ── Dashboard sessions ──────────────────────────────────────────────────────
 
 export const sessions = sqliteTable(
