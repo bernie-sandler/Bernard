@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-17
+
 ### Added
 
 - Images, links and reactions now earn activity points. A message with an image attachment earns an image bonus (default +1) and a message with a link earns a link bonus (default +0.5), on top of the normal message point. Reacting to someone else's message earns points too (default 0.25). The message cooldown applies to each kind separately, so one message can earn the message point and both bonuses. Set the weights on the Settings page or with `/activity settings points_per_image`, `points_per_link` and `points_per_reaction`.
@@ -117,7 +119,8 @@ First release. A self-hosted Discord bot and admin dashboard for one private ser
 - Tag-driven releases: pushing `vX.Y.Z` publishes a multi-arch (amd64/arm64) image to GHCR and creates a GitHub release.
 - Weekly grouped Dependabot updates, with patch and minor updates auto-merged once checks pass.
 
-[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bernie-sandler/bernard/compare/v0.1.0...v0.1.1
