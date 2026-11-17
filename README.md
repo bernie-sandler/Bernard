@@ -27,559 +27,70 @@
 
 A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, API and dashboard run in a single Node process on SQLite.
 
-**What it does**
+## Features
 
-- **Permissions:** a role-based permission system layered on Discord, with wildcards (`admin:*`, `*`) and a `/permcheck` that shows which rule decided.
+- **Permissions:** role-based rules on top of Discord, with wildcards (`admin:*`, `*`) and a `/permcheck` that shows which rule decided.
 - **Moderation:** ban (including temporary bans), kick, timeout, warn, purge, slowmode, lock, roles, nicknames and announcements. Every action becomes a numbered mod case, including bans and kicks done in Discord's own UI.
 - **Logs:** moderation, members, messages, voice, server and commands, each routed to its own channel and stored for searching.
 - **Join-to-create voice:** public or private hubs, owner commands, and startup clean-up so a restart never leaves orphan channels.
 - **Tenure and activity tiers:** up to 10 tiers that need both days in the server and recent activity, with stacking or highest-only modes and step-by-step demotion down to a floor.
-- **Web dashboard:** Discord login, gated by the same permission nodes as the commands, with live updates. Pages: Overview, Members, Moderation, Logs, Command Runner, Permissions, Tiers, Voice hubs, Settings and Audit log.
+- **Status embed:** a pinned message showing your Uptime Kuma monitors, with up/down alerts and ping roles.
+- **Self-assign role panels:** buttons or a menu members use to pick their own roles.
+- **Issue reports:** members report problems from Discord, Bernard opens a [Belltower](https://github.com/bernie-sandler/Belltower) ticket and tells them when it's fixed.
+- **Web dashboard:** Discord login, gated by the same permission nodes as the commands, with live updates. Everything configurable by command is configurable here too.
 
-## Requirements
+## Quick start
 
-- Node.js 22.12+ for local development (the Docker image uses Node 26 LTS)
-- pnpm 10 (`npm i -g pnpm`)
-- Docker (for deployment)
+You need Docker and a Discord application. [Setup](docs/setup.md) walks through the Developer Portal step by step.
 
-## Discord Developer Portal setup
-
-1. Create an application at <https://discord.com/developers/applications>.
-2. **General Information:** copy the **Application ID** into `DISCORD_CLIENT_ID`.
-3. **Bot:**
-   - Click **Reset Token** and put the token in `DISCORD_TOKEN`.
-   - Under **Privileged Gateway Intents**, enable **Server Members Intent** (join tracking, tenure backfill, role resolution) and **Message Content Intent** (message edit/delete logs).
-   - Turn **Public Bot** off so nobody else can invite it.
-4. **OAuth2 (dashboard login):**
-   - Copy the **Client Secret** into `DISCORD_CLIENT_SECRET`.
-   - Under **Redirects**, add `${PUBLIC_BASE_URL}/api/auth/callback`, for example `https://bot.example.com/api/auth/callback`. It must match exactly.
-5. In Discord, enable **Settings → Advanced → Developer Mode**. Then right-click your server, choose **Copy Server ID** and put it in `GUILD_ID`.
-6. Generate the invite link and open it:
+1. In the [Developer Portal](https://discord.com/developers/applications), create an application, enable the **Server Members** and **Message Content** intents, and add the redirect `${PUBLIC_BASE_URL}/api/auth/callback` under OAuth2.
+2. Copy the example config and fill in at least `DISCORD_TOKEN`, `DISCORD_CLIENT_ID`, `GUILD_ID`, `DISCORD_CLIENT_SECRET`, `SESSION_SECRET` and `PUBLIC_BASE_URL`:
 
    ```bash
-   pnpm invite-url
+   cp .env.example .env
    ```
-7. In **Server Settings → Roles**, drag the bot's role **above every role it should manage** (tier roles, roles granted with `/role add`). Discord won't let a bot manage roles at or above its own.
 
-### Intents used
+3. Start it:
 
-| Intent                | Privileged | Why                                                    |
-| --------------------- | ---------- | ------------------------------------------------------ |
-| Guilds                | no         | Channels, roles, guild info                            |
-| GuildMembers          | **yes**    | Joins/leaves, tenure backfill, permission role lookups |
-| GuildMessages         | no         | Message logs, activity points                          |
-| GuildMessageReactions | no         | Reaction activity points                               |
-| MessageContent        | **yes**    | Edit/delete log content, link activity points          |
-| GuildVoiceStates      | no         | Voice logs, join-to-create, voice activity             |
-| GuildModeration       | no         | Ban events, audit log entries                          |
+   ```bash
+   docker compose up -d --build
+   ```
 
-### Bot permissions
+4. Invite the bot with the link from `pnpm invite-url` (also printed in the log), and drag its role above every role it should manage.
+5. Only the owner and Administrators can use admin commands at first. Hand out access with `/permset`, for example:
 
-`pnpm invite-url` prints the exact list and the permission integer: View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Pin Messages, Manage Channels, Manage Roles, Kick Members, Ban Members, Moderate Members, Manage Nicknames, Move Members, Connect and View Audit Log. The scopes are `bot` and `applications.commands`.
+   ```
+   /permset node:dashboard:access role:@Mod value:true
+   ```
 
-## Local development
+The database lives in `./data/bernard.db` and migrations run on startup. Published images are at `ghcr.io/bernie-sandler/bernard` (`latest`, version tags, and `dev` for unreleased changes).
+
+## Documentation
+
+| Page                                       | What's in it                                                             |
+| ------------------------------------------ | ------------------------------------------------------------------------ |
+| [Setup](docs/setup.md)                     | Developer Portal, intents, environment variables, Docker, proxy, backups |
+| [Commands](docs/commands.md)               | Command list and how moderation works                                    |
+| [Permissions](docs/permissions.md)         | Nodes, wildcards and which rule wins                                     |
+| [Logs](docs/logs.md)                       | Log types, retention and the message cache                               |
+| [Voice](docs/voice.md)                     | Join-to-create hubs and owner commands                                   |
+| [Tiers](docs/tiers.md)                     | Tenure, activity scoring and tier roles                                  |
+| [Status embed](docs/status.md)             | Uptime Kuma status page, alerts and ping roles                           |
+| [Role panels](docs/role-panels.md)         | Self-assign role buttons and menus                                       |
+| [Issue reports](docs/issue-reports.md)     | Reporting problems to Belltower from Discord                             |
+| [Dashboard](docs/dashboard.md)             | Setup, what each page needs, security, live updates                      |
+| [Troubleshooting](docs/troubleshooting.md) | Common errors and fixes                                                  |
+| [Development](docs/development.md)         | Local setup, scripts, adding a command, tests, project layout            |
+| [CI and releases](docs/releasing.md)       | Branches, CI, releases and images                                        |
+
+## Development
 
 ```bash
 pnpm install
 ```
 
 ```bash
-cp .env.example .env
-```
-
-Fill in `.env`, then start the bot in watch mode:
-
-```bash
 pnpm dev
 ```
 
-The database is created at `DATABASE_PATH` (`./data/bernard.db` locally) and migrations run on startup.
-
-| Script                      | What it does                                                                |
-| --------------------------- | --------------------------------------------------------------------------- |
-| `pnpm dev`                  | Run with hot reload (tsx)                                                   |
-| `pnpm dev:web`              | Dashboard dev server with hot reload (port 5173)                            |
-| `pnpm build` / `pnpm start` | Compile the server and dashboard to `dist/` and run                         |
-| `pnpm demo`                 | Dashboard demo with fake data, no Discord needed (port 3100)                |
-| `pnpm icons`                | Rebuild the dashboard favicons and login logo from `shared/assets/logo.png` |
-| `pnpm test`                 | Unit tests (vitest)                                                         |
-| `pnpm test:coverage`        | Tests with a coverage report (`coverage/index.html`)                        |
-| `pnpm typecheck`            | TypeScript, strict                                                          |
-| `pnpm lint` / `pnpm format` | Biome                                                                       |
-| `pnpm db:generate`          | Generate a migration after editing `src/db/schema.ts`                       |
-| `pnpm invite-url`           | Print the bot invite URL and the required permissions                       |
-
-## Environment variables
-
-See [.env.example](.env.example) for the full annotated list. The app validates everything with zod at startup and exits with a list of every problem if something is wrong.
-
-| Variable                   | Required     | Default                 | Notes                                                                   |
-| -------------------------- | ------------ | ----------------------- | ----------------------------------------------------------------------- |
-| `DISCORD_TOKEN`            | yes          |                         | Bot token                                                               |
-| `DISCORD_CLIENT_ID`        | yes          |                         | Application ID                                                          |
-| `GUILD_ID`                 | yes          |                         | The one server this bot serves                                          |
-| `DASHBOARD_ENABLED`        | no           | `true`                  |                                                                         |
-| `DISCORD_CLIENT_SECRET`    | if dashboard |                         | OAuth2 client secret                                                    |
-| `SESSION_SECRET`           | if dashboard |                         | 32+ random characters                                                   |
-| `PUBLIC_BASE_URL`          | no           | `http://localhost:3000` | Used for the OAuth redirect                                             |
-| `TRUST_PROXY`              | no           | `false`                 | `true`, a hop count, or proxy IPs/CIDRs                                 |
-| `SESSION_TTL_HOURS`        | no           | `168`                   |                                                                         |
-| `COOKIE_SECURE`            | no           | auto                    | `true` when the base URL is https                                       |
-| `BELLTOWER_URL`            | no           |                         | Belltower's address; turns on [issue reports](#issue-reports-belltower) |
-| `BELLTOWER_TOKEN`          | with URL     |                         | A full Belltower API token (`tt_…`)                                     |
-| `DATABASE_PATH`            | no           | `/data/bernard.db`      |                                                                         |
-| `HOST` / `PORT`            | no           | `0.0.0.0` / `3000`      |                                                                         |
-| `LOG_LEVEL` / `LOG_PRETTY` | no           | `info` / `false`        | pino JSON logs                                                          |
-| `PUID` / `PGID`            | no           | `1000` / `1000`         | Docker only: user and group that run the app and own `/data`            |
-| `UMASK`                    | no           | `0022`                  | Docker only: file-creation mask                                         |
-
-## Deploying with Docker
-
-```bash
-cp .env.example .env
-```
-
-```bash
-docker compose up -d --build
-```
-
-The project's `./data` folder is mounted at `/data`, so the SQLite database is `./data/bernard.db` on the host. Health check: `GET /healthz`.
-
-The container starts as root only long enough to give `PUID:PGID` (default `1000:1000`) ownership of `/data`, then runs the app as that user with `UMASK`. On a bind mount, set them to the owner you want on the host, for example `PUID=99` and `PGID=100` on Unraid. Starting the container with `--user` skips this and runs as that user, so `/data` must already be writable by it.
-
-Behind Nginx Proxy Manager or Cloudflare, set `PUBLIC_BASE_URL` to the public https URL and `TRUST_PROXY` to your proxy (for example `TRUST_PROXY=1`).
-
-## Backups
-
-Everything lives in one SQLite file. Take a consistent online backup with SQLite's backup API:
-
-```bash
-docker compose exec Bernard node -e "require('better-sqlite3')('/data/bernard.db').backup('/data/backup.db').then(()=>console.log('ok'))"
-```
-
-The backup appears on the host at `./data/backup.db`.
-
-To restore or move to another machine: stop the container, delete `bernard.db`, `bernard.db-wal` and `bernard.db-shm` from `./data`, copy the backup in as `./data/bernard.db`, and start it again. Copy a backup made this way rather than a live `bernard.db`, which can leave recent changes behind in the `-wal` file.
-
-## Commands
-
-| Command                                                    | Node                               | Notes                                                                                                                                    |
-| ---------------------------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `/help`, `/ping`, `/userinfo [user]`, `/serverinfo`        | `public:*`                         | Open to everyone by default. `/help` lists only commands you can use.                                                                    |
-| `/permset`, `/permunset`, `/permlist`, `/permcheck`        | `config:perm*`                     | Manage the permission rules.                                                                                                             |
-| `/ban user [reason] [duration] [delete_days]`              | `admin:ban`                        | With `duration` (e.g. `7d`, max 365d) it's a temporary ban, lifted automatically.                                                        |
-| `/unban`, `/kick`                                          | `admin:unban`, `admin:kick`        |                                                                                                                                          |
-| `/timeout user duration [reason]`, `/untimeout`            | `admin:timeout`, `admin:untimeout` | Max 28 days (a Discord limit). Members with Administrator can't be timed out.                                                            |
-| `/warn user reason`                                        | `admin:warn`                       |                                                                                                                                          |
-| `/warnings list user`, `/warnings remove case`             | `admin:warnings`                   | Removing a warning keeps it in history and marks it removed.                                                                             |
-| `/purge amount [user] [channel]`                           | `admin:purge`                      | 1-100 messages. With `user` it scans up to 500 recent messages. Skips pinned messages and anything older than 14 days, and reports both. |
-| `/slowmode seconds [channel]`                              | `admin:slowmode`                   | 0 turns it off.                                                                                                                          |
-| `/lock [channel]`, `/unlock [channel]`                     | `admin:lock`, `admin:unlock`       | Lock denies sending for @everyone. Unlock restores the previous overwrite.                                                               |
-| `/role add`, `/role remove`                                | `admin:role`                       | Refuses roles at or above the bot's or your highest role, plus managed roles.                                                            |
-| `/nick user [nickname]`                                    | `admin:nick`                       | Leave `nickname` empty to reset it.                                                                                                      |
-| `/announce channel message [embed] [title]`                | `admin:announce`                   | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does.                                          |
-| `/case id`                                                 | `admin:case`                       |                                                                                                                                          |
-| `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs`                      |                                                                                                                                          |
-
-Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlock`) require a channel when run from the dashboard.
-
-### Moderation behaviour
-
-- Every action creates a numbered **mod case** with its source (`slash`, `dashboard`, `discord` or `system`) and posts it to the `moderation` log.
-- **Hierarchy checks:** you can't act on yourself, the owner, the bot, or anyone whose highest role is at or above yours. The bot can't act on anyone at or above its own highest role either.
-- **DMs:** the target gets a DM before a ban or kick, and after a timeout or warning. Turn this off with the `moderation.dmOnAction` setting. The bot's reply says when a DM couldn't be delivered.
-- **Discord's audit log** shows the real moderator, because the bot puts `(by Name [id])` in the reason.
-- **Actions done in Discord's own UI** (ban, unban, kick, timeout) are picked up from the audit log and recorded as cases with source `discord`. This needs the View Audit Log permission.
-
-## Logs
-
-| Type         | Events                                                                       |
-| ------------ | ---------------------------------------------------------------------------- |
-| `moderation` | Every mod case, warning removals                                             |
-| `members`    | Joins (with account age and a new-account warning), leaves, nickname changes |
-| `messages`   | Edits (before/after), deletes (content, attachment names), bulk deletes      |
-| `voice`      | Joins, leaves and moves                                                      |
-| `server`     | Role and channel create/delete/update, member role changes                   |
-| `commands`   | Every command use: who, what, arguments, allowed/denied, slash or dashboard  |
-
-- `/logs set` posts a test message first and refuses channels the bot can't write to.
-- Entries are always **stored in the database**, even for types not routed to a channel, so the dashboard can search them. Stored entries are pruned after `retentionDays` (default 30), checked daily at 03:30 and at startup.
-- Message content for edit/delete logs comes from a **bounded in-memory cache** (default 5000 messages, set with `/logs config cache_size`). Edits and deletes of messages sent before the bot started, or already evicted, are logged as "not cached". Discord doesn't report who deleted a message, so delete logs don't include that.
-- Events in log channels themselves are ignored, and bot messages aren't logged.
-- Create, delete and update events for temporary voice channels are left out of the `server` log. Joins, leaves and moves still appear in the `voice` log.
-
-## Join-to-create voice
-
-Members join a **hub** voice channel. The bot then creates a channel for them in the hub's category, makes them the owner and moves them in.
-
-```
-/voice hub add channel:#➕-join type:public category:#Temp Voice name_template:{user}'s Channel
-/voice hub add channel:#🔒-private type:private category:#Temp Voice hide:false
-/voice settings grace_seconds:10 cooldown_seconds:30 owner_leave:transfer
-```
-
-- **Public** hubs create channels anyone can join. **Private** hubs deny Connect for @everyone, and the channel stays visible unless `hide:true`. The owner, and anyone they `/vc invite`, can connect.
-- Name templates support `{user}` (display name), `{username}` and `{count}` (the channel's number for that hub).
-- An empty channel is deleted after `grace_seconds` (default 10). A reconnect within that window keeps it.
-- When the owner leaves a channel that still has people in it:
-  - with `owner_leave:transfer` (the default), the longest-present member becomes owner;
-  - with `owner_leave:claim`, anyone inside can `/vc claim` it.
-- **Abuse protection:** each member can create one channel per `cooldown_seconds` (default 30). Someone on cooldown is disconnected from the hub with a short notice in the hub's text chat, which deletes itself after 10 seconds.
-- **On startup** the bot deletes empty tracked channels, forgets channels that no longer exist, fixes owners who left while it was offline, and creates channels for anyone already waiting in a hub. A restart leaves no orphan channels.
-- If a hub channel is deleted, its hub configuration is removed too. Temporary channels count towards Discord's limit of 50 channels per category. When a category is full, the member gets a notice instead of a channel.
-
-| Owner command            | Node                         | What it does                                                                                                 |
-| ------------------------ | ---------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `/vc lock`, `/vc unlock` | `voice:lock`, `voice:unlock` | Deny or allow Connect for @everyone. People already inside can still reconnect after a lock.                 |
-| `/vc limit limit`        | `voice:limit`                | User limit, 0-99 (0 = unlimited).                                                                            |
-| `/vc rename name`        | `voice:rename`               | Discord allows 2 renames per channel per 10 minutes. A blocked rename replies with how many minutes to wait. |
-| `/vc invite user`        | `voice:invite`               | Allow a member to connect even when the channel is locked or private.                                        |
-| `/vc kick user`          | `voice:kick`                 | Disconnect a member and block them from rejoining.                                                           |
-| `/vc transfer user`      | `voice:transfer`             | Give ownership to someone in the channel.                                                                    |
-| `/vc claim`              | `voice:claim`                | Take over a channel whose owner left.                                                                        |
-
-`voice:*` is allowed for @everyone by default, but these commands only work for the owner of the temporary channel you're in. `/voice ...` needs `config:voice`.
-
-## Tenure, activity and tiers
-
-### Tenure
-
-- **Tenure** is the number of days since the member joined.
-- **Backfill:** at every startup the bot syncs the member list. New members are backfilled from Discord's join date, and anyone who left while the bot was offline is marked as gone.
-- **First join:** Discord only reports the most recent join, so the first join from before the bot arrived can't be recovered. From then on, the bot keeps the earliest join it has seen.
-- **Rejoins:** when someone leaves and rejoins, tenure restarts by default. Use `/activity settings reset_tenure_on_rejoin:false` to keep it. A newer join date seen at startup counts as a rejoin.
-
-### Activity
-
-- **No message content is stored.** The score is built from counts kept per member per day: messages, image and link bonuses, reactions given and received that earned points, and voice minutes.
-- **Cooldown:** each kind (message, image, link, reaction given) earns at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points. The kinds cool down separately.
-- **Messages:** `points_per_message` per message (default 1).
-- **Images and links:** a message with an image attachment earns `points_per_image` (default 1) and a message with a link earns `points_per_link` (default 0.5), on top of the message point.
-- **Reactions:** adding a reaction to someone else's message earns `points_per_reaction` (default 0.25). Removing it doesn't take points away, and reacting to your own message earns nothing.
-- **Reactions received:** when someone reacts to your message within a few minutes of you posting it (default 5), you earn `points_per_reaction_received` (default 0.25). Each member counts once per message, however many emojis they add. Bot and webhook messages earn nothing.
-  - **Grace period:** a member who receives a set number of point-earning reactions within a set time (default 20 within 60 minutes) earns no reaction points at all, given or received, for the grace length (default 6 hours). A threshold of 0 turns this off. The receive window and grace settings are on the dashboard Settings page.
-- **Voice:** `points_per_voice_minute` per minute in voice (default 0.2, so 1 point per 5 minutes; servers set up before this change keep their saved value).
-  - AFK-channel time doesn't count, nor does time with no other human in the channel (bots don't count as company).
-  - Self-deafened time doesn't count by default. Change this with `count_deafened`.
-  - **Long sessions:** after `voice_long_session_minutes` of continuous voice time (default 120), each further minute is multiplied by `voice_long_session_multiplier` (default 1, no change). Set it below 1 so all-day lounge sitting counts for less, or above 1 to reward long hangouts. A session survives gaps of up to 5 minutes, such as a reconnect. Changing the multiplier re-scores past activity; changing the session length only affects minutes from then on.
-  - Session lengths, grace periods and cooldowns are kept in memory, so a restart clears them.
-- **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too. That can move members above or below a tier's activity requirement, so review tier thresholds after changing weights.
-- **History:** daily rows are kept for 400 days, for the dashboard charts.
-
-```
-/activity settings message_cooldown:60 points_per_message:1 points_per_image:1 points_per_link:0.5 points_per_reaction:0.25 points_per_voice_minute:0.2 window_days:30
-```
-
-### Tiers
-
-You can have up to 10 tiers. Each has a name, a role, a minimum tenure in days and a minimum activity score over the window. A member earns a tier when they meet **both** thresholds. Set either one to 0 to make a tenure-only or activity-only tier.
-
-```
-/tiers add name:Newcomer role:@Newcomer min_tenure_days:0 min_activity:0
-/tiers add name:Regular role:@Regular min_tenure_days:30 min_activity:100
-/tiers add name:Veteran role:@Veteran min_tenure_days:365 min_activity:0
-/tiers settings mode:highest_only demotion:true grace_days:7 floor:Member sync_minutes:60
-/tiers exclude role:@Staff
-/tiers check
-/tiers sync
-```
-
-| Command                                      | Node              | What it does                                                                                                                                                                                                                                                                                                                                                                                                            |
-| -------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/tiers list`                                | `config:tiers`    | Tiers, member counts, settings, last sync and any problems                                                                                                                                                                                                                                                                                                                                                              |
-| `/tiers add`, `/tiers edit`, `/tiers remove` | `config:tiers`    | Manage tiers. Position 1 is the lowest.                                                                                                                                                                                                                                                                                                                                                                                 |
-| `/tiers check`                               | `config:tiers`    | Checks that tier roles exist, aren't managed, and sit below the bot's highest role. Also warns when a higher tier is no harder to reach than the one below it.                                                                                                                                                                                                                                                          |
-| `/tiers sync`                                | `config:tiers`    | Re-evaluate every member now                                                                                                                                                                                                                                                                                                                                                                                            |
-| `/tiers tenure-sync [preview]`               | `config:tiers`    | One-off placement by tenure alone. Ignores activity requirements and puts every member exactly in the tier their tenure earns, adding and removing tier roles (including higher ones they hold but haven't earned). `preview:true` lists how many members would gain or lose each tier without changing anything. Doesn't affect the regular sync schedule. Useful right after install, before activity history exists. |
-| `/tiers settings`, `/tiers exclude`          | `config:tiers`    | Mode, demotion and grace period, demotion floor (`floor:none` clears it), sync interval, excluded roles                                                                                                                                                                                                                                                                                                                 |
-| `/activity settings`                         | `config:activity` | Scoring weights, cooldown, window, tenure reset on rejoin                                                                                                                                                                                                                                                                                                                                                               |
-| `/rank [user]`                               | `public:rank`     | Tenure, activity score and breakdown, leaderboard position, current tier and what's needed for the next one. The reply is public.                                                                                                                                                                                                                                                                                       |
-
-- **Mode:** `highest_only` (the default) keeps just the highest earned tier role and removes lower ones. `stack` keeps every earned tier role.
-- **Demotion** is on by default and goes **one tier at a time**. A member who falls below a tier they hold keeps it for `grace_days` (default 7), then drops one tier, and a fresh grace period starts. This repeats until they reach a tier they earn, so a long absence walks someone down slowly instead of dropping them to the bottom. With demotion off, held tiers are never removed.
-- **Floor** (`/tiers settings floor:Member`): members who meet the floor tier's **tenure** requirement are never demoted below it. They're also placed in it without any activity, so long-standing members never end up as New Comers. Members short of that tenure follow the normal rules.
-- **Excluded roles** (for example staff, or bots, which are always skipped) are left alone.
-- **When tiers are evaluated:**
-  - everyone, every `sync_minutes` (default 60);
-  - a single member, a few seconds after their score crosses a tier threshold, and when they join (so a tier with 0 tenure and 0 activity applies straight away);
-  - everyone, on demand with `/tiers sync`.
-- Tier changes are posted to the `members` log.
-- **The bot's role must sit above every tier role.** Tier roles it can't manage are skipped and reported by `/tiers check`, `/tiers list` and a warning at startup.
-
-## Status embed (Uptime Kuma)
-
-Bernard can keep one pinned message up to date with whether your services are up. It reads an [Uptime Kuma](https://github.com/louislam/uptime-kuma) **status page** through Kuma's public status page API. It needs no Kuma login or API key, and Bernard runs no checks of its own.
-
-1. In Uptime Kuma, create a status page (for example slug `homelab`) and add the monitors you want in Discord, such as Tower, Plex and Minecraft. Kuma's groups become the embed's sections. Monitors that aren't on the page are never shown.
-2. On the dashboard's **Status** page (or with `/status setup kuma_url slug`), enter Kuma's address as Bernard can reach it, for example `http://192.168.1.10:3001`, and the slug. **Test connection** reads the page without saving anything.
-3. Pick a channel and **Post embed** (or `/status post channel`). Bernard posts the embed, pins it and edits it after every check (default every 60 seconds, 60–3600). If someone deletes the message, it's posted again.
-
-Each line shows the monitor's state (🟢 up, 🔴 down, 🟡 pending, 🔧 maintenance), its response time and its uptime over the last 24 hours. If Kuma can't be reached, the embed keeps the last known state and says since when Kuma has been unreachable, rather than marking everything down.
-
-**Alerts:** pick an alert channel and Bernard posts "🔴 Plex is down" and "🟢 Plex is back up" (with how long it was down) when a monitor changes state. Give a monitor a **ping role** (on the Status page, or `/status notify monitor role`) to mention that role in its alerts. This pairs well with a self-assign ping role like "MC updates". Only that role is pinged, never @everyone. Pending and maintenance don't alert, and Kuma's own retry settings decide how quickly a monitor counts as down. Restarting Bernard or switching status pages never sends alerts for the state it starts with.
-
-| Command                                  | Node            | Notes                                                               |
-| ---------------------------------------- | --------------- | ------------------------------------------------------------------- |
-| `/status show`                           | `public:status` | Current status, only visible to you. Open to everyone by default.   |
-| `/status setup kuma_url slug [interval]` | `config:status` | Tests the status page before saving.                                |
-| `/status post channel`                   | `config:status` | Posts (or moves) the pinned embed.                                  |
-| `/status alerts [channel]`               | `config:status` | Leave `channel` empty to turn alerts off.                           |
-| `/status notify monitor [role]`          | `config:status` | Role to ping for that monitor's alerts. Leave `role` empty to stop. |
-| `/status refresh`                        | `config:status` | Reads Kuma and updates the embed now.                               |
-
-Pinning needs the **Pin Messages** permission. Without it the embed still works, it just isn't pinned.
-
-## Self-assign role panels
-
-A role panel is a message with buttons or a dropdown menu that members use to give themselves roles: game roles, or ping roles like "MC updates" and "Movie night".
-
-Create panels on the dashboard's **Role panels** page:
-
-- **Style:** _Buttons_ shows one button per role, and clicking it adds or removes that role. _Menu_ shows a dropdown: picking a role adds it, and picking one you already have removes it.
-- **Mode:** _Any number_ lets members pick as many roles as they like. _Only one_ swaps roles: picking a new one removes the panel's other roles.
-- Each role gets a label, an optional emoji (a Unicode emoji or a custom one like `<:creeper:123456789012345678>`) and an optional description.
-
-Then pick a channel and **Post**. Edits update the posted message automatically. Bernard replies to each click privately with what changed. The role changes show up in the `members` log as usual, with the panel's name as the reason in Discord's audit log.
-
-For safety, a panel can't offer @everyone, roles managed by an integration or bot, roles at or above Bernard's highest role, or roles with moderator or admin permissions (Administrator, Manage Server/Roles/Channels/Messages, Ban, Kick, Timeout and similar). This is checked when the panel is saved and again on every click, so a role that later gains such a permission stops being handed out.
-
-| Command                         | Node                | Notes                                                        |
-| ------------------------------- | ------------------- | ------------------------------------------------------------ |
-| `/rolepanel list`               | `config:rolepanels` |                                                              |
-| `/rolepanel post panel channel` | `config:rolepanels` | Moves the panel if it was posted elsewhere.                  |
-| `/rolepanel refresh panel`      | `config:rolepanels` | Re-renders the message, e.g. after renaming a role.          |
-| `/rolepanel delete panel`       | `config:rolepanels` | Deletes the panel and its message. Members keep their roles. |
-
-Clicking a panel needs no permission node: anyone who can see the message can use it.
-
-## Issue reports (Belltower)
-
-Friends tell you "Plex is down" in Discord, and the message scrolls away. With [Belltower](https://github.com/bernie-sandler/Belltower) connected, they can report it properly instead: Bernard opens a Belltower ticket and messages them when it's fixed.
-
-1. In Belltower (**1.6 or later**), open **Account → Your tokens** and create a **full** token. A read-only token can't open tickets. Use an account that sees every tag, or Bernard loses track of tickets it can't see. The token doesn't need "may complete tickets".
-2. Set `BELLTOWER_URL` (as Bernard can reach it, e.g. `http://192.168.1.10:8080`) and `BELLTOWER_TOKEN`, then restart Bernard. On the dashboard's **Issue reports** page, **Test connection** checks both.
-3. Optionally post a **Report an issue** panel (on that page, or `/belltower panel channel`). Its button opens a short form, so members don't need the command.
-
-Members report with `/report service [details]` or the panel. `service` suggests the monitors from your [status page](#status-embed-uptime-kuma), but anything can be typed. Each report becomes a ticket titled after the service, with the details and who reported it, tagged `Discord` by default. Tags, priority, column and a per-member cooldown (default 2 minutes) are on the Issue reports page.
-
-**Reports join Uptime Kuma's tickets.** When a report names a Kuma monitor, Bernard uses the same key as Belltower's Uptime Kuma webhook (`uptime-kuma:<monitor id>`). If Kuma has already opened a ticket for that monitor, the report is added to it as a note instead of opening another, and so are later reports from other members. When Kuma sees the monitor come back up and resolves the ticket, everyone who reported it hears about it. Reports for something that isn't a monitor always open their own ticket.
-
-**Hearing back.** Bernard checks Belltower every minute. When a ticket is done, each reporter gets a DM with the ticket number and the resolution reason ("Fixed", "Won't fix"…). If their DMs are closed, Bernard mentions them in the channel they reported from instead. A ticket that's deleted closes the report too, with a short note. If Belltower can't be reached, nothing is closed; the dashboard shows the error until it's back. Reporting can be paused on the Issue reports page; reports already filed are still followed up.
-
-| Command                      | Node               | Notes                                                                   |
-| ---------------------------- | ------------------ | ----------------------------------------------------------------------- |
-| `/report service [details]`  | `public:report`    | Open to everyone by default. The reply is only visible to the reporter. |
-| `/belltower panel [channel]` | `config:belltower` | Posts (or moves) the report panel. Leave `channel` empty to remove it.  |
-| `/belltower test`            | `config:belltower` | Checks the address and token.                                           |
-
-The panel's button uses `public:report` too: deny that node to a role and its members can't report either way.
-
-## Web dashboard
-
-The dashboard is served by the same process on `PORT` (default 3000). Members sign in with Discord (`identify` scope only). The bot then checks that they're in the server and that their roles grant `dashboard:access`.
-
-### Setup
-
-1. In the Developer Portal → **OAuth2**, copy the Client Secret into `DISCORD_CLIENT_SECRET`. Then add the redirect `${PUBLIC_BASE_URL}/api/auth/callback`, for example `https://bot.example.com/api/auth/callback`.
-2. Set `SESSION_SECRET` to 32+ random characters (`openssl rand -hex 32`).
-3. Grant access, for example `/permset node:dashboard:access role:@Mod value:true`. The owner, and Administrators while admin bypass is on, always have access.
-
-### What each page needs
-
-| Page                                                   | Node(s)                                                                                                                                                                                                                                                        |
-| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Overview, Members, member detail                       | `dashboard:access`                                                                                                                                                                                                                                             |
-| Member actions (warn, timeout, kick, ban, roles)       | The same node as the slash command: `admin:warn`, `admin:timeout`, `admin:untimeout`, `admin:kick`, `admin:ban`, `admin:role`. Buttons only appear for actions you're allowed to take.                                                                         |
-| Moderation (all cases) and the history on member pages | `admin:case` (same as `/case`)                                                                                                                                                                                                                                 |
-| Warning counts                                         | `admin:warnings`                                                                                                                                                                                                                                               |
-| Logs                                                   | `dashboard:logs` (deleted message content shows up here, so it has its own node, denied by default)                                                                                                                                                            |
-| Command Runner                                         | `dashboard:access` to open it. It lists only the commands you may run, and each run checks the command's own node.                                                                                                                                             |
-| Permissions                                            | `config:permlist` to view. Setting a rule needs `config:permset`, unsetting needs `config:permunset`, and the check tool needs `config:permcheck`.                                                                                                             |
-| Tiers                                                  | `config:tiers` (add, edit, reorder, delete, sync, tenure placement, tier settings)                                                                                                                                                                             |
-| Voice hubs                                             | `config:voice` (hubs and voice settings)                                                                                                                                                                                                                       |
-| Status                                                 | `config:status` (Uptime Kuma connection, embed channel, alerts and ping roles)                                                                                                                                                                                 |
-| Role panels                                            | `config:rolepanels` (create, edit, post and delete panels)                                                                                                                                                                                                     |
-| Issue reports                                          | `config:belltower` (Belltower connection test, report settings, report panel, open and closed reports)                                                                                                                                                         |
-| Settings                                               | Each section needs its slash command's node: logs `config:logs`; activity and tenure `config:activity`. Moderation DMs and the Administrator bypass have no slash command and use the new `config:settings` node. Sections you can't edit are shown read-only. |
-| Audit log                                              | `dashboard:audit` (denied by default)                                                                                                                                                                                                                          |
-
-Everything you can configure with a slash command can also be configured on the dashboard.
-
-- **Command Runner:** builds a form from the command's own option definitions, with member, role and channel pickers and autocomplete. It then runs the command through the same executor as Discord: same permission check, same validation, same `commands` log entry, with source `dashboard`. Options that default to the current channel in Discord (for example `/purge`'s channel) are required here.
-- **Settings:** a new log channel gets a test message before it's saved, just like `/logs set`. Invalid values are rejected with the reason.
-- **Audit log:** records every configuration change, whether from a slash command, the dashboard or the system, and every dashboard action (member actions, command runs, syncs, logins). Each entry has its before and after values.
-
-Permissions are re-checked on **every request**, so removing someone's role takes effect immediately, without waiting for their session to expire. Dashboard actions call the same services as the slash commands. They create mod cases with `source = dashboard`, and each one is also recorded in the audit log.
-
-### Security
-
-- **Sessions** are stored server-side in SQLite, and only a SHA-256 of the session ID is kept. The cookie is signed, `httpOnly` and `SameSite=Lax`, and `Secure` when `PUBLIC_BASE_URL` is https. Sessions last `SESSION_TTL_HOURS` (default 7 days) and expired ones are cleaned up hourly.
-- **CSRF:** every state-changing request needs the per-session `X-CSRF-Token` header. A request whose `Origin` doesn't match `PUBLIC_BASE_URL` is rejected.
-- **OAuth:** the flow uses a signed, short-lived `state` cookie. The Discord access token is used once to identify the user and then revoked.
-- **Headers:** a strict Content-Security-Policy, `X-Frame-Options: DENY`, `nosniff`, and HSTS behind https.
-- **Rate limits:** 300 requests per minute per IP, and 20 per minute on the login endpoints.
-
-### Reverse proxy (Nginx Proxy Manager / Cloudflare)
-
-- Set `PUBLIC_BASE_URL` to the public https URL and `TRUST_PROXY=1` (one proxy hop), or to your proxy's IP or CIDR. Behind Cloudflare plus Nginx Proxy Manager, use `TRUST_PROXY=2`.
-- Proxy everything (`/`, `/api`, `/healthz`) to the container's port 3000. No WebSocket configuration is needed.
-- Live updates use a long-lived HTTP response (Server-Sent Events). The bot sends `X-Accel-Buffering: no`, so Nginx Proxy Manager streams it without extra config. A heartbeat every 25 seconds keeps Cloudflare's idle timeout from cutting it off.
-
-### Live updates
-
-The dashboard keeps one event stream open per tab (`GET /api/events`). When something changes, the stream tells the dashboard which area changed, and the affected pages refetch through the normal permission-checked API. Changes include a member joining, a new mod case, someone entering a temporary voice channel, a tier sync, or a settings or permission edit. The stream itself never carries data, so it can't leak anything a page wouldn't show.
-
-- The sidebar shows **Live**, **Reconnecting…** or **Offline**. After a reconnect the dashboard refreshes everything, in case it missed changes.
-- The stream re-checks the session and `dashboard:access` with every heartbeat and closes once either is gone. Each user can have up to 10 open tabs.
-- The Overview still refreshes once a minute for latency and uptime, which don't generate events.
-
-### Development
-
-Run the bot and API with `pnpm dev`, and the dashboard with hot reload with `pnpm dev:web`. Open <http://localhost:5173>. Set `PUBLIC_BASE_URL=http://localhost:5173` and add `http://localhost:5173/api/auth/callback` as a redirect in the Developer Portal, so login and the same-origin checks go through Vite's proxy.
-
-To look around without a bot, run `pnpm build:web && pnpm demo` and open <http://localhost:3100>. This runs the real API and dashboard against in-memory fake data, and "Log in with Discord" signs you straight in as the owner.
-
-### Notes
-
-- The **online count** is Discord's approximate presence count. It's fetched without the privileged Presence intent and cached for a minute.
-- The joins and leaves chart uses the stored `members` log, so it covers at most `retentionDays` (30 days).
-
-## Permissions model
-
-Nodes look like `category:command` (for example `admin:ban`), with wildcards `category:*` and `*`. Categories: `admin`, `config`, `public`, `voice`, `dashboard`.
-
-1. The **server owner** always passes.
-2. Members with Discord's **Administrator** permission pass, while the `adminBypass` setting is on (the default).
-3. The **most specific** matching rule wins: `admin:ban`, then `admin:*`, then `*`.
-4. At the same specificity, **named roles beat @everyone**, and between named roles **deny wins**.
-5. With no matching rule, `public:*` and `voice:*` are allowed and everything else is denied.
-
-Examples:
-
-```
-/permset node:admin:* role:@Mod value:true
-/permset node:admin:ban role:@Mod value:false
-/permcheck user:@someone node:admin:ban
-```
-
-Slash commands register without `default_member_permissions`, so Discord shows every command to everyone. The bot checks permissions when a command runs and replies privately when it denies one.
-
-## Adding a command
-
-1. Create or extend a file in `src/bot/commands/`:
-
-   ```ts
-   export const hello = defineCommand({
-     name: 'hello',
-     description: 'Say hello',
-     node: 'public:hello',              // permission node checked before execute
-     options: { who: opt.user({ description: 'Who to greet', required: true }) },
-     async execute(ctx, input) {         // input is validated and typed
-       return ok(`Hello <@${input.who}>!`);
-     },
-   });
-   ```
-2. Add it to `allCommands` in `src/bot/commands/index.ts`.
-3. Put the real logic in a service under `src/services/`, so the dashboard can call the same function.
-4. Restart. Commands re-register automatically when their definitions change.
-
-The same definition drives the Discord registration JSON, the zod input validation and the dashboard Command Runner form, so a new command shows up in the Command Runner with no extra work. Both entry points go through `CommandExecutor`, which checks the permission, validates the input, runs the command and writes the `commands` log. If the command changes configuration, record it with `services.audit` so it appears in the Audit log and triggers live updates.
-
-## Testing
-
-```bash
-pnpm test
-```
-
-```bash
-pnpm test:coverage
-```
-
-- The tests use in-memory SQLite and fake Discord ports (`tests/helpers.ts`), so they need no bot token.
-- **What's covered:**
-  - the permission resolver (every precedence case);
-  - tier qualification, demotion and the floor;
-  - activity cooldowns and voice-minute rules;
-  - the temporary voice channel lifecycle and startup reconcile;
-  - moderation guards, purge and temporary bans;
-  - log routing;
-  - the OAuth flow, sessions, CSRF and per-route permission gates;
-  - every dashboard endpoint;
-  - the live event stream;
-  - the job scheduler.
-- `pnpm test:coverage` measures our own code and leaves out thin discord.js glue (adapters, gateway event handlers, startup wiring), which only a live gateway can exercise. An HTML report is written to `coverage/`.
-- `pnpm demo` serves the real dashboard and API on fake data for hands-on checks.
-
-## CI and releases
-
-Work happens on two long-lived branches. `dev` collects finished changes: feature and fix branches start from it and are squash-merged back into it. `main` holds released code and is the default branch. A release merges `dev` into `main` with a merge commit (not a squash, which would make the two branches' histories drift apart).
-
-GitHub Actions run on every pull request to, and every push to, `main` and `dev` ([`ci.yml`](.github/workflows/ci.yml)): Biome lint, typecheck, tests with coverage on Node 22 and 26, the production build, and a Docker image build. A final **CI passed** job sums them up. Mark it as the required status check in the branch protection rules for both `main` and `dev` so pull requests can only merge when everything is green.
-
-[Dependabot](.github/dependabot.yml) opens weekly PRs (Mondays) against `dev` for pnpm packages, GitHub Actions and the Docker base image, with minor and patch bumps grouped into one PR per category. [`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) queues patch and minor PRs to squash-merge once **CI passed** is green, and comments on major updates so you review them by hand. Auto-merge needs **Settings → General → Allow auto-merge** turned on.
-
-To release ([`release.yml`](.github/workflows/release.yml)):
-
-1. On `dev`, bump `version` in `package.json` and move the `[Unreleased]` entries in `CHANGELOG.md` into a `## [0.2.0] - YYYY-MM-DD` section.
-2. Open a pull request from `dev` into `main` and merge it with **Create a merge commit**.
-3. Tag the merge commit on `main` and push the tag:
-
-   ```bash
-   git tag v0.2.0
-   ```
-
-   ```bash
-   git push origin v0.2.0
-   ```
-
-The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release whose notes are the version's `CHANGELOG.md` section.
-
-To try a numbered build before it reaches `main`, publish a release candidate from `dev` with [`prerelease.yml`](.github/workflows/prerelease.yml). Run it from the Actions tab (**Prerelease** → **Run workflow** on `dev`) or with:
-
-```bash
-gh workflow run prerelease.yml --ref dev
-```
-
-It runs CI, publishes an image tagged like `0.2.0-rc.1` (never `latest`), and creates the `v0.2.0-rc.1` tag and a GitHub prerelease whose notes are the `[Unreleased]` section of `CHANGELOG.md`. No version bump is needed: the version is the one in `package.json`, or the next patch version once that one is released, and each run counts up the `rc` number. Pass `-f version=0.3.0` to pick another version. Release candidates can't be published by pushing a tag.
-
-Every push to `dev` also publishes `ghcr.io/bernie-sandler/bernard:dev` ([`dev-image.yml`](.github/workflows/dev-image.yml)), so a test container can follow unreleased changes without a version bump or tag. It is rebuilt and overwritten on each push, isn't a GitHub release, and can break between releases, so keep production on a version tag or `latest`. To rebuild it by hand, run the workflow from the Actions tab.
-
-An urgent fix for a released version can skip `dev`: branch from `main`, merge the fix (with its version bump and changelog section) into `main` and tag it, then merge `main` back into `dev` with a merge commit.
-
-GitHub keeps at most one release and one release candidate. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags are never removed, so any version can still be checked out.
-
-The image registry is pruned to match by [`cleanup-images.yml`](.github/workflows/cleanup-images.yml), which runs after each release, release candidate and `:dev` build. It keeps every version (`0.1.3`, `0.1`), `latest`, `dev` and the current release candidate, and deletes older release candidates, `sha-*` tags and untagged leftovers of replaced `:dev` builds. Run it from the Actions tab with **dry run** ticked to see what it would delete.
-
-## Troubleshooting
-
-| Symptom                                                   | Fix                                                                                                                                                                                      |
-| --------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Startup says "Invalid environment configuration"          | Every problem is listed. Compare your `.env` with `.env.example`.                                                                                                                        |
-| "Discord refused the privileged intents"                  | Developer Portal → Bot → enable **Server Members Intent** and **Message Content Intent**.                                                                                                |
-| "The bot is not in GUILD_ID"                              | Invite it with `pnpm invite-url`, which is also printed in the log. Check that `GUILD_ID` is your server's ID.                                                                           |
-| "I'm missing a Discord permission…" or tier roles skipped | Move the bot's role above every role it manages. `/tiers check` lists the problem roles.                                                                                                 |
-| Admin commands say "You don't have permission"            | Only the owner (and Administrators with admin bypass) can use them until you `/permset`. Use `/permcheck` to see which rule decided.                                                     |
-| Dashboard login loops back to the login page              | `PUBLIC_BASE_URL` must be exactly the URL in your browser, and the Developer Portal redirect must be `${PUBLIC_BASE_URL}/api/auth/callback`. Over plain http, set `COOKIE_SECURE=false`. |
-| Dashboard says "Cross-origin request blocked"             | `PUBLIC_BASE_URL` doesn't match the address you're using (for example localhost vs 127.0.0.1, or a different port).                                                                      |
-| Behind a proxy, all visitors share one rate limit or IP   | Set `TRUST_PROXY` (see Reverse proxy).                                                                                                                                                   |
-| Sidebar stuck on "Reconnecting…"                          | Your proxy is buffering or timing out the event stream. Disable buffering for `/api/events`. The rest of the dashboard works without it.                                                 |
-| Message delete logs say "not cached"                      | The message was sent before the bot started, or was evicted from the cache. Raise `/logs config cache_size` if needed.                                                                   |
-
-## Project layout
-
-```
-src/
-  config/     env + settings schemas (zod)
-  db/         Drizzle schema, migrations, client
-  shared/     types and helpers shared with the dashboard (option descriptors, permission nodes, API shapes)
-  services/   all business logic: permissions, commands, moderation, logs, voice, members, activity,
-              tiers, status (Uptime Kuma), role panels, settings, audit, sessions, dashboard queries,
-              live events
-  discord/    narrow ports + discord.js adapters
-  bot/        client, gateway events, slash command definitions, registration
-  api/        Fastify server: auth, dashboard routes, management routes, live event stream
-  jobs/       scheduled tasks (unbans, retention, voice minutes, tier sync, status refresh, session cleanup)
-web/          React dashboard (Vite + Tailwind), built into dist/web and served by the API
-scripts/      invite URL generator, dashboard demo
-tests/        vitest tests with in-memory SQLite and fake Discord ports
-```
+Run `pnpm build:web && pnpm demo` to try the dashboard on fake data with no Discord at <http://localhost:3100>. See [Development](docs/development.md) for the rest. Changes are listed in the [CHANGELOG](CHANGELOG.md).
