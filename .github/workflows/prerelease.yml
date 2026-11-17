@@ -155,3 +155,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.prepare.outputs.tag }}
         run: bash .github/scripts/prune-releases.sh "$TAG"
+
+  cleanup-images:
+    name: Clean up images
+    needs: github-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/cleanup-images.yml

@@ -132,3 +132,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: bash .github/scripts/prune-releases.sh "$GITHUB_REF_NAME"
+
+  cleanup-images:
+    name: Clean up images
+    needs: github-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/cleanup-images.yml

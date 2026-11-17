@@ -469,7 +469,9 @@ Every push to `dev` also publishes `ghcr.io/bernie-sandler/bernard:dev` ([`dev-i
 
 An urgent fix for a released version can skip `dev`: branch from `main`, merge the fix (with its version bump and changelog section) into `main` and tag it, then merge `main` back into `dev` with a merge commit.
 
-GitHub keeps at most one release and one release candidate. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags and Docker image tags are never removed, so any version can still be checked out or pulled.
+GitHub keeps at most one release and one release candidate. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags are never removed, so any version can still be checked out.
+
+The image registry is pruned to match by [`cleanup-images.yml`](.github/workflows/cleanup-images.yml), which runs after each release, release candidate and `:dev` build. It keeps every version (`0.1.3`, `0.1`), `latest`, `dev` and the current release candidate, and deletes older release candidates, `sha-*` tags and untagged leftovers of replaced `:dev` builds. Run it from the Actions tab with **dry run** ticked to see what it would delete.
 
 ## Troubleshooting
 

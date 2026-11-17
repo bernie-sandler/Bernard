@@ -2,7 +2,7 @@ name: Dev image
 
 # Publishes ghcr.io/<owner>/bernard:dev from the tip of the dev branch, so a test container can follow dev without
 # version bumps or tags. Code reaches dev through pull requests that already passed CI, so CI isn't run again here.
-# Release images (versions and "latest") are only published by release.yml.
+# Version images are only published by release.yml (releases, "latest") and prerelease.yml (release candidates).
 
 on:
   push:
@@ -55,3 +55,12 @@ jobs:
           sbom: true
       - name: Summary
         run: printf '```\ndocker pull %s:dev\n```\n' "${IMAGE,,}" >> "$GITHUB_STEP_SUMMARY"
+
+  # Removes the untagged leftovers of the :dev build this push replaced (once they are an hour old).
+  cleanup-images:
+    name: Clean up images
+    needs: publish
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/cleanup-images.yml
