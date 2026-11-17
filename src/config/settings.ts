@@ -131,6 +131,23 @@ export const settingsSchema = z.object({
         .default({}),
     })
     .prefault({}),
+
+  /** Issue reports sent to Belltower (/report and the report panel). URL and token come from env. */
+  belltower: z
+    .object({
+      /** Accept new reports. Off keeps watching tickets already reported. */
+      enabled: z.boolean().default(true),
+      /** Belltower tags put on every reported ticket. */
+      labels: z.array(z.string().trim().min(1).max(50)).max(10).default(['Discord']),
+      priority: z.enum(['P0', 'P1', 'P2', 'P3']).nullable().default(null),
+      /** Belltower column for new tickets (name). null = Belltower's default. */
+      column: z.string().trim().min(1).max(100).nullable().default(null),
+      /** Minimum time between two reports from the same member. */
+      cooldownSeconds: z.number().int().min(0).max(3600).default(120),
+      /** Channel holding the "Report an issue" panel. null = no panel. */
+      panelChannelId: channelRef,
+    })
+    .prefault({}),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

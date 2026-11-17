@@ -195,6 +195,36 @@ services.rolePanels.create(system, {
   ],
 });
 
+// ── Issue reports (fake Belltower) ──────────────────────────────────────────
+const helpChannel = guild.addChannel('help');
+await services.belltower.setPanelChannel(system, helpChannel);
+services.settings.update(system, 'demo', (s) => {
+  s.belltower.cooldownSeconds = 0;
+});
+const reporterOf = (id: string) => {
+  const m = guild.members.get(id)!;
+  return { userId: m.userId, username: m.username, displayName: m.displayName };
+};
+await services.belltower.report(reporterOf(memberIds[0]!), {
+  service: '3',
+  details: "Can't connect, says connection refused",
+  channelId: general,
+});
+await services.belltower.report(reporterOf(memberIds[1]!), { service: 'Minecraft', channelId: helpChannel });
+await services.belltower.report(reporterOf(memberIds[2]!), {
+  service: 'Nextcloud',
+  details: 'Photos upload stuck at 99%',
+  channelId: helpChannel,
+});
+await services.belltower.report(reporterOf(memberIds[3]!), {
+  service: 'Plex',
+  details: 'Buffering on every 4K movie',
+  channelId: general,
+});
+t.belltower.setState(2, 'in_progress');
+t.belltower.setState(3, 'done', 'Fixed');
+await services.belltower.poll();
+
 // ── Activity history (60 days) ──────────────────────────────────────────────
 const rows: (typeof activityDaily.$inferInsert)[] = [];
 for (const id of memberIds) {

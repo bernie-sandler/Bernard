@@ -16,6 +16,13 @@ import type {
   VoicePort,
 } from '../src/discord/ports.js';
 import { nullLogger } from '../src/logger.js';
+import type {
+  BelltowerClient,
+  NewCard,
+  OpenedCard,
+  TicketInfo,
+  TicketState,
+} from '../src/services/belltower/client.js';
 import type { Actor, CommandDefinition } from '../src/services/commands/types.js';
 import { createContainer } from '../src/services/container.js';
 import type { KumaClient, KumaSnapshot } from '../src/services/status/kuma.js';
@@ -279,6 +286,62 @@ export class FakeKuma implements KumaClient {
   }
 }
 
+/**
+ * Belltower stand-in. openCard dedupes on dedupeKey like the real API; set a ticket's state with
+ * setState, remove it with `tickets.delete`, or set `error` to make every call fail.
+ */
+export class FakeBelltower implements BelltowerClient {
+  opened: NewCard[] = [];
+  tickets = new Map<number, TicketInfo & { dedupeKey?: string }>();
+  error: Error | null = null;
+  reads = 0;
+  private nextId = 1;
+
+  async openCard(card: NewCard): Promise<OpenedCard> {
+    if (this.error) throw this.error;
+    this.opened.push(card);
+    if (card.dedupeKey) {
+      for (const t of this.tickets.values()) {
+        if (t.dedupeKey === card.dedupeKey && t.state !== 'done' && !t.deletedAt) {
+          return { status: 'updated', id: t.id, ticketNo: t.ticketNo, title: t.title };
+        }
+      }
+    }
+    const id = this.nextId++;
+    const ticket = {
+      id,
+      ticketNo: `261117-${id}`,
+      title: card.title,
+      state: 'received' as const,
+      resolution: null,
+      archivedAt: null,
+      deletedAt: null,
+      ...(card.dedupeKey ? { dedupeKey: card.dedupeKey } : {}),
+    };
+    this.tickets.set(id, ticket);
+    return { status: 'created', id, ticketNo: ticket.ticketNo, title: card.title };
+  }
+  async getCards(ids: number[]): Promise<TicketInfo[]> {
+    this.reads++;
+    if (this.error) throw this.error;
+    return ids.flatMap((id) => {
+      const t = this.tickets.get(id);
+      if (!t) return [];
+      const { dedupeKey: _key, ...info } = t;
+      return [{ ...info }];
+    });
+  }
+  async ping(): Promise<void> {
+    if (this.error) throw this.error;
+  }
+  setState(id: number, state: TicketState, resolution: string | null = null) {
+    const t = this.tickets.get(id);
+    if (!t) throw new Error(`no ticket ${id}`);
+    t.state = state;
+    t.resolution = resolution;
+  }
+}
+
 export class FakeBot implements BotInfoPort {
   isReady() {
     return true;
@@ -400,13 +463,17 @@ export function makeActor(member: MemberInfo): Actor {
   };
 }
 
-export function testContainer(commands: CommandDefinition[] = allCommands) {
+export function testContainer(
+  commands: CommandDefinition[] = allCommands,
+  opts: { belltower?: boolean } = {},
+) {
   const dbHandle = memoryDb();
   const guild = new FakeGuild();
   const messenger = new FakeMessenger();
   const mod = new FakeModeration(guild);
   const voice = new FakeVoice(guild);
   const kuma = new FakeKuma();
+  const belltower = new FakeBelltower();
   const container = createContainer({
     db: dbHandle.db,
     logger: nullLogger,
@@ -417,6 +484,17 @@ export function testContainer(commands: CommandDefinition[] = allCommands) {
     bot: new FakeBot(),
     commands,
     kuma,
+    belltower: opts.belltower === false ? null : belltower,
   });
-  return { ...container, guild, messenger, mod, voice, kuma, db: dbHandle.db, close: dbHandle.close };
+  return {
+    ...container,
+    guild,
+    messenger,
+    mod,
+    voice,
+    kuma,
+    belltower,
+    db: dbHandle.db,
+    close: dbHandle.close,
+  };
 }

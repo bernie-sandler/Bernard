@@ -301,6 +301,39 @@ export const rolePanels = sqliteTable(
   (t) => [index('role_panels_guild').on(t.guildId)],
 );
 
+// ── Issue reports (Belltower) ───────────────────────────────────────────────
+
+export const issueReports = sqliteTable(
+  'issue_reports',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    reporterId: text('reporter_id').notNull(),
+    /** Where it was reported; the fallback when the reporter's DMs are closed. */
+    channelId: text('channel_id'),
+    service: text('service').notNull(),
+    /** Uptime Kuma monitor, when the report named one. */
+    monitorId: integer('monitor_id'),
+    details: text('details'),
+    /** Belltower card id and ticket number. */
+    cardId: integer('card_id').notNull(),
+    ticketNo: text('ticket_no'),
+    /** created: opened a ticket. updated: added a note to one already open. */
+    cardStatus: text('card_status', { enum: ['created', 'updated'] }).notNull(),
+    /** Last state read from Belltower: received, in_progress, waiting, done, deleted, missing. */
+    state: text('state').notNull().default('received'),
+    resolution: text('resolution'),
+    createdAt: createdAt(),
+    /** Set once the ticket is done (or gone) and the reporter was told. */
+    closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
+    notifiedVia: text('notified_via', { enum: ['dm', 'channel', 'none'] }),
+  },
+  (t) => [
+    index('issue_reports_open').on(t.guildId, t.closedAt),
+    index('issue_reports_reporter').on(t.reporterId),
+  ],
+);
+
 // ── Dashboard sessions ──────────────────────────────────────────────────────
 
 export const sessions = sqliteTable(

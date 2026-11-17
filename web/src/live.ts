@@ -18,6 +18,7 @@ const INVALIDATES: Record<string, string[][]> = {
   permissions: [['permissions'], ['me'], ['commands'], ['audit']],
   status: [['status']],
   rolePanels: [['rolePanels'], ['audit']],
+  belltower: [['belltower'], ['audit']],
 };
 
 /**

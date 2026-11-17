@@ -29,6 +29,9 @@ export function startJobs(services: Services, logger: Logger): Scheduler {
     runOnStart: true,
   });
 
+  // Tell members when the Belltower tickets they reported are done.
+  scheduler.add('belltower-poll', '* * * * *', () => services.belltower.poll(), { runOnStart: true });
+
   // Drop daily activity rows older than the history kept for charts.
   scheduler.add('activity-retention', '45 3 * * *', () => services.activity.prune(), { runOnStart: true });
 

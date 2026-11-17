@@ -430,3 +430,47 @@ export interface RolePanelsResponse {
   panels: RolePanelDto[];
   roles: PanelRoleDto[];
 }
+
+// ── Belltower issue reports ──
+
+export type BelltowerPriority = 'P0' | 'P1' | 'P2' | 'P3';
+
+export interface IssueReportDto {
+  id: number;
+  reporterId: string;
+  /** Display name when the member is cached, else null. */
+  reporterName: string | null;
+  channelId: string | null;
+  service: string;
+  monitorId: number | null;
+  details: string | null;
+  cardId: number;
+  ticketNo: string | null;
+  /** created: opened the ticket. updated: added to an open one. */
+  cardStatus: 'created' | 'updated';
+  /** received, in_progress, waiting, done, archived, deleted, missing, duplicate or dismissed. */
+  state: string;
+  resolution: string | null;
+  createdAt: string;
+  closedAt: string | null;
+  notifiedVia: 'dm' | 'channel' | 'none' | null;
+}
+
+export interface BelltowerResponse {
+  /** BELLTOWER_URL and BELLTOWER_TOKEN are set. */
+  configured: boolean;
+  error: string | null;
+  errorSince: string | null;
+  lastPollAt: string | null;
+  config: {
+    enabled: boolean;
+    labels: string[];
+    priority: BelltowerPriority | null;
+    column: string | null;
+    cooldownSeconds: number;
+    panelChannelId: string | null;
+  };
+  panel: { channelId: string; messageId: string } | null;
+  open: IssueReportDto[];
+  recent: IssueReportDto[];
+}
