@@ -75,7 +75,7 @@ A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, 
 
 ### Bot permissions
 
-`pnpm invite-url` prints the exact list and the permission integer: View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Manage Channels, Manage Roles, Kick Members, Ban Members, Moderate Members, Manage Nicknames, Move Members, Connect and View Audit Log. The scopes are `bot` and `applications.commands`.
+`pnpm invite-url` prints the exact list and the permission integer: View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Pin Messages, Manage Channels, Manage Roles, Kick Members, Ban Members, Moderate Members, Manage Nicknames, Move Members, Connect and View Audit Log. The scopes are `bot` and `applications.commands`.
 
 ## Local development
 
@@ -300,6 +300,52 @@ You can have up to 10 tiers. Each has a name, a role, a minimum tenure in days a
 - Tier changes are posted to the `members` log.
 - **The bot's role must sit above every tier role.** Tier roles it can't manage are skipped and reported by `/tiers check`, `/tiers list` and a warning at startup.
 
+## Status embed (Uptime Kuma)
+
+Bernard can keep one pinned message up to date with whether your services are up. It reads an [Uptime Kuma](https://github.com/louislam/uptime-kuma) **status page** through Kuma's public status page API. It needs no Kuma login or API key, and Bernard runs no checks of its own.
+
+1. In Uptime Kuma, create a status page (for example slug `homelab`) and add the monitors you want in Discord, such as Tower, Plex and Minecraft. Kuma's groups become the embed's sections. Monitors that aren't on the page are never shown.
+2. On the dashboard's **Status** page (or with `/status setup kuma_url slug`), enter Kuma's address as Bernard can reach it, for example `http://192.168.1.10:3001`, and the slug. **Test connection** reads the page without saving anything.
+3. Pick a channel and **Post embed** (or `/status post channel`). Bernard posts the embed, pins it and edits it after every check (default every 60 seconds, 30–3600). If someone deletes the message, it's posted again.
+
+Each line shows the monitor's state (🟢 up, 🔴 down, 🟡 pending, 🔧 maintenance), its response time and its uptime over the last 24 hours. If Kuma can't be reached, the embed keeps the last known state and says since when Kuma has been unreachable, rather than marking everything down.
+
+**Alerts:** pick an alert channel and Bernard posts "🔴 Plex is down" and "🟢 Plex is back up" (with how long it was down) when a monitor changes state. Give a monitor a **ping role** (on the Status page, or `/status notify monitor role`) to mention that role in its alerts. This pairs well with a self-assign ping role like "MC updates". Only that role is pinged, never @everyone. Pending and maintenance don't alert, and Kuma's own retry settings decide how quickly a monitor counts as down. Restarting Bernard or switching status pages never sends alerts for the state it starts with.
+
+| Command                                  | Node            | Notes                                                               |
+| ---------------------------------------- | --------------- | ------------------------------------------------------------------- |
+| `/status show`                           | `public:status` | Current status, only visible to you. Open to everyone by default.   |
+| `/status setup kuma_url slug [interval]` | `config:status` | Tests the status page before saving.                                |
+| `/status post channel`                   | `config:status` | Posts (or moves) the pinned embed.                                  |
+| `/status alerts [channel]`               | `config:status` | Leave `channel` empty to turn alerts off.                           |
+| `/status notify monitor [role]`          | `config:status` | Role to ping for that monitor's alerts. Leave `role` empty to stop. |
+| `/status refresh`                        | `config:status` | Reads Kuma and updates the embed now.                               |
+
+Pinning needs the **Pin Messages** permission. Without it the embed still works, it just isn't pinned.
+
+## Self-assign role panels
+
+A role panel is a message with buttons or a dropdown menu that members use to give themselves roles: game roles, or ping roles like "MC updates" and "Movie night".
+
+Create panels on the dashboard's **Role panels** page:
+
+- **Style:** _Buttons_ shows one button per role, and clicking it adds or removes that role. _Menu_ shows a dropdown, and members end up with exactly the roles they pick.
+- **Mode:** _Any number_ lets members pick as many roles as they like. _Only one_ swaps roles: picking a new one removes the panel's other roles.
+- Each role gets a label, an optional emoji (a Unicode emoji or a custom one like `<:creeper:123456789012345678>`) and an optional description.
+
+Then pick a channel and **Post**. Edits update the posted message automatically. Bernard replies to each click privately with what changed. The role changes show up in the `members` log as usual, with the panel's name as the reason in Discord's audit log.
+
+For safety, a panel can't offer @everyone, roles managed by an integration or bot, roles at or above Bernard's highest role, or roles with moderator or admin permissions (Administrator, Manage Server/Roles/Channels/Messages, Ban, Kick, Timeout and similar). This is checked when the panel is saved and again on every click, so a role that later gains such a permission stops being handed out.
+
+| Command                         | Node                | Notes                                                        |
+| ------------------------------- | ------------------- | ------------------------------------------------------------ |
+| `/rolepanel list`               | `config:rolepanels` |                                                              |
+| `/rolepanel post panel channel` | `config:rolepanels` | Moves the panel if it was posted elsewhere.                  |
+| `/rolepanel refresh panel`      | `config:rolepanels` | Re-renders the message, e.g. after renaming a role.          |
+| `/rolepanel delete panel`       | `config:rolepanels` | Deletes the panel and its message. Members keep their roles. |
+
+Clicking a panel needs no permission node: anyone who can see the message can use it.
+
 ## Web dashboard
 
 The dashboard is served by the same process on `PORT` (default 3000). Members sign in with Discord (`identify` scope only). The bot then checks that they're in the server and that their roles grant `dashboard:access`.
@@ -323,6 +369,8 @@ The dashboard is served by the same process on `PORT` (default 3000). Members si
 | Permissions                                            | `config:permlist` to view. Setting a rule needs `config:permset`, unsetting needs `config:permunset`, and the check tool needs `config:permcheck`.                                                                                                             |
 | Tiers                                                  | `config:tiers` (add, edit, reorder, delete, sync, tenure placement, tier settings)                                                                                                                                                                             |
 | Voice hubs                                             | `config:voice` (hubs and voice settings)                                                                                                                                                                                                                       |
+| Status                                                 | `config:status` (Uptime Kuma connection, embed channel, alerts and ping roles)                                                                                                                                                                                 |
+| Role panels                                            | `config:rolepanels` (create, edit, post and delete panels)                                                                                                                                                                                                     |
 | Settings                                               | Each section needs its slash command's node: logs `config:logs`; activity and tenure `config:activity`. Moderation DMs and the Administrator bypass have no slash command and use the new `config:settings` node. Sections you can't edit are shown read-only. |
 | Audit log                                              | `dashboard:audit` (denied by default)                                                                                                                                                                                                                          |
 
@@ -496,11 +544,12 @@ src/
   db/         Drizzle schema, migrations, client
   shared/     types and helpers shared with the dashboard (option descriptors, permission nodes, API shapes)
   services/   all business logic: permissions, commands, moderation, logs, voice, members, activity,
-              tiers, settings, audit, sessions, dashboard queries, live events
+              tiers, status (Uptime Kuma), role panels, settings, audit, sessions, dashboard queries,
+              live events
   discord/    narrow ports + discord.js adapters
   bot/        client, gateway events, slash command definitions, registration
   api/        Fastify server: auth, dashboard routes, management routes, live event stream
-  jobs/       scheduled tasks (unbans, retention, voice minutes, tier sync, session cleanup)
+  jobs/       scheduled tasks (unbans, retention, voice minutes, tier sync, status refresh, session cleanup)
 web/          React dashboard (Vite + Tailwind), built into dist/web and served by the API
 scripts/      invite URL generator, dashboard demo
 tests/        vitest tests with in-memory SQLite and fake Discord ports
