@@ -56,7 +56,13 @@ export const settingsSchema = z.object({
     .object({
       messageCooldownSeconds: z.number().int().min(0).max(3600).default(60),
       pointsPerMessage: z.number().min(0).max(100).default(1),
-      pointsPerVoiceMinute: z.number().min(0).max(100).default(1),
+      pointsPerVoiceMinute: z.number().min(0).max(100).default(0.2),
+      /** Bonus on top of the message point for a message with an image attachment. */
+      pointsPerImage: z.number().min(0).max(100).default(1),
+      /** Bonus on top of the message point for a message with a link. */
+      pointsPerLink: z.number().min(0).max(100).default(0.5),
+      /** Points for adding a reaction to someone else's message. */
+      pointsPerReaction: z.number().min(0).max(100).default(0.25),
       countSelfDeafened: z.boolean().default(false),
       windowDays: z.number().int().min(1).max(365).default(30),
     })

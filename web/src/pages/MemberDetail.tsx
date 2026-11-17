@@ -2,7 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, useState } from 'react';
 import { Link, useParams } from 'react-router';
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import type { ActionResponse, MemberDetailResponse, RoleDto } from '../../../src/shared/api.js';
+import type {
+  ActionResponse,
+  ActivityPoints,
+  MemberDetailResponse,
+  RoleDto,
+} from '../../../src/shared/api.js';
 import { api } from '../api.js';
 import { CaseTable } from '../components/CaseTable.js';
 import {
@@ -23,6 +28,15 @@ import {
 import { date, dateTime, number, relativeTime, roleColor } from '../format.js';
 
 type Action = 'warn' | 'timeout' | 'untimeout' | 'kick' | 'ban';
+
+/** Stacked bars of the points each kind of activity earned per day. */
+const ACTIVITY_SERIES: { key: keyof ActivityPoints; name: string; color: string }[] = [
+  { key: 'messages', name: 'Messages', color: '#818cf8' },
+  { key: 'images', name: 'Images', color: '#fbbf24' },
+  { key: 'links', name: 'Links', color: '#38bdf8' },
+  { key: 'reactions', name: 'Reactions', color: '#f472b6' },
+  { key: 'voice', name: 'Voice', color: '#34d399' },
+];
 
 const ACTIONS: Record<Action, { label: string; variant: 'secondary' | 'danger'; confirm: string }> = {
   warn: { label: 'Warn', variant: 'secondary', confirm: 'Warn member' },
@@ -233,26 +247,30 @@ export function MemberDetailPage() {
           </span>
         }
       >
-        <div className="mb-4 grid grid-cols-3 gap-3 text-center">
-          <div>
-            <div className="text-2xl font-semibold">{number(m.activity.score)}</div>
-            <div className="text-xs text-slate-500">points</div>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold">{number(m.activity.messagePoints)}</div>
-            <div className="text-xs text-slate-500">counted messages</div>
-          </div>
-          <div>
-            <div className="text-2xl font-semibold">{number(m.activity.voiceMinutes)}</div>
-            <div className="text-xs text-slate-500">voice minutes</div>
-          </div>
+        <div className="mb-4 grid grid-cols-3 gap-3 text-center sm:grid-cols-6">
+          {[
+            { value: m.activity.score, label: 'points' },
+            { value: m.activity.messagePoints, label: 'counted messages' },
+            { value: m.activity.images, label: 'images' },
+            { value: m.activity.links, label: 'links' },
+            { value: m.activity.reactions, label: 'reactions' },
+            { value: m.activity.voiceMinutes, label: 'voice minutes' },
+          ].map((s) => (
+            <div key={s.label}>
+              <div className="text-2xl font-semibold">{number(s.value)}</div>
+              <div className="text-xs text-slate-500">{s.label}</div>
+            </div>
+          ))}
         </div>
         {m.activity.history.length === 0 ? (
           <EmptyState>No activity in the last 90 days.</EmptyState>
         ) : (
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={m.activity.history} margin={{ left: -20, right: 4 }}>
+              <BarChart
+                data={m.activity.history.map((h) => ({ date: h.date, ...h.points }))}
+                margin={{ left: -20, right: 4 }}
+              >
                 <CartesianGrid stroke="#1e293b" vertical={false} />
                 <XAxis
                   dataKey="date"
@@ -261,23 +279,12 @@ export function MemberDetailPage() {
                   fontSize={11}
                   tickLine={false}
                 />
-                <YAxis
-                  allowDecimals={false}
-                  stroke="#64748b"
-                  fontSize={11}
-                  tickLine={false}
-                  axisLine={false}
-                />
-                <Tooltip cursor={{ fill: '#1e293b' }} />
+                <YAxis stroke="#64748b" fontSize={11} tickLine={false} axisLine={false} />
+                <Tooltip cursor={{ fill: '#1e293b' }} formatter={(v) => `${number(Number(v))} pts`} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="messagePoints" name="Messages" stackId="a" fill="#818cf8" />
-                <Bar
-                  dataKey="voiceMinutes"
-                  name="Voice minutes"
-                  stackId="a"
-                  fill="#34d399"
-                  radius={[3, 3, 0, 0]}
-                />
+                {ACTIVITY_SERIES.map((s) => (
+                  <Bar key={s.key} dataKey={s.key} name={s.name} stackId="a" fill={s.color} />
+                ))}
               </BarChart>
             </ResponsiveContainer>
           </div>

@@ -1,7 +1,9 @@
+import type { Settings } from '../../config/settings.js';
 import type { AutocompleteHandler } from '../../services/commands/types.js';
 import { defineCommand, defineTree } from '../../services/commands/types.js';
 import { UserError } from '../../services/errors.js';
 import { MAX_TIERS, type TierRow } from '../../services/tiers.js';
+import { activitySummary } from '../../shared/api.js';
 import { opt } from '../../shared/commandOptions.js';
 import { COLORS, ok } from '../../shared/commandResult.js';
 
@@ -36,6 +38,9 @@ function tierLine(t: TierRow, members?: number): string {
   ].filter(Boolean);
   return `**${t.position}. ${t.name}** <@&${t.roleId}> · ${req.join(' + ') || 'everyone'}${members !== undefined ? ` · ${members} member(s)` : ''}`;
 }
+
+const weightsLine = (a: Settings['activity']) =>
+  `${a.pointsPerMessage} pt/message · +${a.pointsPerImage} pt/image · +${a.pointsPerLink} pt/link · ${a.pointsPerReaction} pt/reaction · ${a.pointsPerVoiceMinute} pt/voice minute`;
 
 const actorOf = (ctx: { actor: { userId: string }; source: 'slash' | 'dashboard' }) => ({
   id: ctx.actor.userId,
@@ -326,12 +331,27 @@ export const activityCommand = defineTree({
       node: 'config:activity',
       options: {
         message_cooldown: opt.integer({
-          description: 'Seconds between messages that earn a point',
+          description: 'Seconds before each kind (message, image, link, reaction) can earn again',
           min: 0,
           max: 3600,
         }),
         points_per_message: opt.number({ description: 'Points per counted message', min: 0, max: 100 }),
         points_per_voice_minute: opt.number({ description: 'Points per voice minute', min: 0, max: 100 }),
+        points_per_image: opt.number({
+          description: 'Bonus points for a message with an image',
+          min: 0,
+          max: 100,
+        }),
+        points_per_link: opt.number({
+          description: 'Bonus points for a message with a link',
+          min: 0,
+          max: 100,
+        }),
+        points_per_reaction: opt.number({
+          description: "Points for reacting to someone else's message",
+          min: 0,
+          max: 100,
+        }),
         count_deafened: opt.boolean({ description: 'Count voice time while self-deafened' }),
         window_days: opt.integer({
           description: 'Rolling window for activity scores (days)',
@@ -347,7 +367,7 @@ export const activityCommand = defineTree({
           const a = ctx.services.settings.get().activity;
           const t = ctx.services.settings.get().tenure;
           return ok(
-            `Cooldown ${a.messageCooldownSeconds}s · ${a.pointsPerMessage} pt/message · ${a.pointsPerVoiceMinute} pt/voice minute · deafened ${a.countSelfDeafened ? 'counts' : "doesn't count"} · window ${a.windowDays}d · tenure ${t.resetOnRejoin ? 'resets' : 'kept'} on rejoin.`,
+            `Cooldown ${a.messageCooldownSeconds}s · ${weightsLine(a)} · deafened ${a.countSelfDeafened ? 'counts' : "doesn't count"} · window ${a.windowDays}d · tenure ${t.resetOnRejoin ? 'resets' : 'kept'} on rejoin.`,
           );
         }
         const s = ctx.services.settings.update(actorOf(ctx), 'settings.activity', (d) => {
@@ -356,13 +376,17 @@ export const activityCommand = defineTree({
           if (input.points_per_message !== undefined) d.activity.pointsPerMessage = input.points_per_message;
           if (input.points_per_voice_minute !== undefined)
             d.activity.pointsPerVoiceMinute = input.points_per_voice_minute;
+          if (input.points_per_image !== undefined) d.activity.pointsPerImage = input.points_per_image;
+          if (input.points_per_link !== undefined) d.activity.pointsPerLink = input.points_per_link;
+          if (input.points_per_reaction !== undefined)
+            d.activity.pointsPerReaction = input.points_per_reaction;
           if (input.count_deafened !== undefined) d.activity.countSelfDeafened = input.count_deafened;
           if (input.window_days !== undefined) d.activity.windowDays = input.window_days;
           if (input.reset_tenure_on_rejoin !== undefined)
             d.tenure.resetOnRejoin = input.reset_tenure_on_rejoin;
         });
         return ok(
-          `Saved. Cooldown ${s.activity.messageCooldownSeconds}s · ${s.activity.pointsPerMessage} pt/message · ${s.activity.pointsPerVoiceMinute} pt/voice minute · window ${s.activity.windowDays}d.`,
+          `Saved. Cooldown ${s.activity.messageCooldownSeconds}s · ${weightsLine(s.activity)} · window ${s.activity.windowDays}d.`,
         );
       },
     }),
@@ -412,7 +436,7 @@ export const rank = defineCommand({
             },
             {
               name: `Activity (${window}d)`,
-              value: `**${fmtPoints(p.totals.score)}** points\n${p.totals.messagePoints} message(s) · ${p.totals.voiceMinutes} voice min`,
+              value: `**${fmtPoints(p.totals.score)}** points\n${activitySummary(p.totals)}`,
               inline: true,
             },
             {

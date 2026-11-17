@@ -251,6 +251,9 @@ export class DashboardService {
           score: totals?.score ?? 0,
           messagePoints: totals?.messagePoints ?? 0,
           voiceMinutes: totals?.voiceMinutes ?? 0,
+          images: totals?.images ?? 0,
+          links: totals?.links ?? 0,
+          reactions: totals?.reactions ?? 0,
           tier: tier ? { name: tier.name, roleId: tier.roleId } : null,
           warnings: showWarnings ? (warnings.get(m.userId) ?? 0) : null,
         };
@@ -335,11 +338,7 @@ export class DashboardService {
         windowDays: settings.get().activity.windowDays,
         ...totals,
         rank: rankIndex >= 0 ? rankIndex + 1 : null,
-        history: activity.history(userId, 90, now).map((h) => ({
-          date: h.date,
-          messagePoints: h.messagePoints,
-          voiceMinutes: h.voiceMinutes,
-        })),
+        history: activity.history(userId, 90, now),
       },
       tier: {
         current: progress?.current ? { name: progress.current.name, roleId: progress.current.roleId } : null,

@@ -61,14 +61,15 @@ A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, 
 
 ### Intents used
 
-| Intent           | Privileged | Why                                                    |
-| ---------------- | ---------- | ------------------------------------------------------ |
-| Guilds           | no         | Channels, roles, guild info                            |
-| GuildMembers     | **yes**    | Joins/leaves, tenure backfill, permission role lookups |
-| GuildMessages    | no         | Message logs, activity points                          |
-| MessageContent   | **yes**    | Edit/delete log content                                |
-| GuildVoiceStates | no         | Voice logs, join-to-create, voice activity             |
-| GuildModeration  | no         | Ban events, audit log entries                          |
+| Intent                | Privileged | Why                                                    |
+| --------------------- | ---------- | ------------------------------------------------------ |
+| Guilds                | no         | Channels, roles, guild info                            |
+| GuildMembers          | **yes**    | Joins/leaves, tenure backfill, permission role lookups |
+| GuildMessages         | no         | Message logs, activity points                          |
+| GuildMessageReactions | no         | Reaction activity points                               |
+| MessageContent        | **yes**    | Edit/delete log content, link activity points          |
+| GuildVoiceStates      | no         | Voice logs, join-to-create, voice activity             |
+| GuildModeration       | no         | Ban events, audit log entries                          |
 
 ### Bot permissions
 
@@ -246,16 +247,19 @@ Members join a **hub** voice channel. The bot then creates a channel for them in
 
 ### Activity
 
-- **No message content is stored.** The score is built from two numbers kept per member per day: messages that earned a point, and voice minutes.
-- **Messages:** 1 point per message, at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points.
-- **Voice:** points per minute in voice (default 1).
+- **No message content is stored.** The score is built from counts kept per member per day: messages, image and link bonuses and reactions that earned points, and voice minutes.
+- **Cooldown:** each kind (message, image, link, reaction) earns at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points. The kinds cool down separately.
+- **Messages:** `points_per_message` per message (default 1).
+- **Images and links:** a message with an image attachment earns `points_per_image` (default 1) and a message with a link earns `points_per_link` (default 0.5), on top of the message point.
+- **Reactions:** adding a reaction to someone else's message earns `points_per_reaction` (default 0.25). Removing it doesn't take points away, and reacting to your own message earns nothing.
+- **Voice:** `points_per_voice_minute` per minute in voice (default 0.2, so 1 point per 5 minutes; servers set up before this change keep their saved value).
   - AFK-channel time doesn't count, nor does time with no other human in the channel (bots don't count as company).
   - Self-deafened time doesn't count by default. Change this with `count_deafened`.
-- **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too.
+- **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too. That can move members above or below a tier's activity requirement, so review tier thresholds after changing weights.
 - **History:** daily rows are kept for 400 days, for the dashboard charts.
 
 ```
-/activity settings message_cooldown:60 points_per_message:1 points_per_voice_minute:1 window_days:30
+/activity settings message_cooldown:60 points_per_message:1 points_per_image:1 points_per_link:0.5 points_per_reaction:0.25 points_per_voice_minute:0.2 window_days:30
 ```
 
 ### Tiers
