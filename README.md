@@ -11,6 +11,7 @@
 
 <p align="center">
   <img alt="Project status: In Development" src="https://img.shields.io/badge/status-In%20Development-3178C6">
+  <img alt="Project status: In Development" src="https://img.shields.io/badge/Version-v0.1.4-orange">
 </p>
 
 <p align="center">
