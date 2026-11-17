@@ -18,7 +18,9 @@ import type {
 import { nullLogger } from '../src/logger.js';
 import type { Actor, CommandDefinition } from '../src/services/commands/types.js';
 import { createContainer } from '../src/services/container.js';
+import type { KumaClient, KumaSnapshot } from '../src/services/status/kuma.js';
 import type { ResultEmbed } from '../src/shared/commandResult.js';
+import type { OutgoingMessage } from '../src/shared/messages.js';
 
 export const GUILD_ID = '100000000000000001';
 export const OWNER_ID = '200000000000000001';
@@ -106,7 +108,7 @@ export class FakeGuild implements GuildPort {
   }
   addRole(name: string, position = 1, extra: Partial<RoleInfo> = {}): string {
     const id = sid();
-    this.roles.set(id, { id, name, position, managed: false, color: 0, ...extra });
+    this.roles.set(id, { id, name, position, managed: false, color: 0, elevated: false, ...extra });
     return id;
   }
   addChannel(name: string, kind: ChannelInfo['kind'] = 'text'): string {
@@ -222,10 +224,58 @@ export class FakeModeration implements ModerationPort {
 export class FakeMessenger implements MessengerPort {
   sent: { channelId: string; embed: ResultEmbed }[] = [];
   fail = false;
+  /** Messages sent with send(), by ID (edits replace the stored message). */
+  messages = new Map<string, { channelId: string; msg: OutgoingMessage; pinned: boolean }>();
+  /** Channels send() treats as missing or not postable. */
+  unsendable = new Set<string>();
+  canPin = true;
+  edits = 0;
+
   async sendEmbed(channelId: string, embed: ResultEmbed): Promise<string | null> {
     if (this.fail) throw new Error('send failed');
     this.sent.push({ channelId, embed });
     return sid();
+  }
+  async send(channelId: string, msg: OutgoingMessage): Promise<string | null> {
+    if (this.fail) throw new Error('send failed');
+    if (this.unsendable.has(channelId)) return null;
+    const id = sid();
+    this.messages.set(id, { channelId, msg, pinned: false });
+    return id;
+  }
+  async edit(channelId: string, messageId: string, msg: OutgoingMessage): Promise<boolean> {
+    const m = this.messages.get(messageId);
+    if (!m || m.channelId !== channelId) return false;
+    m.msg = msg;
+    this.edits++;
+    return true;
+  }
+  async pin(_channelId: string, messageId: string): Promise<boolean> {
+    const m = this.messages.get(messageId);
+    if (!m || !this.canPin) return false;
+    m.pinned = true;
+    return true;
+  }
+  async delete(_channelId: string, messageId: string): Promise<void> {
+    this.messages.delete(messageId);
+  }
+  /** Messages currently in a channel, oldest first. */
+  inChannel(channelId: string) {
+    return [...this.messages.entries()]
+      .filter(([, m]) => m.channelId === channelId)
+      .map(([id, m]) => ({ id, ...m }));
+  }
+}
+
+/** Uptime Kuma stand-in: set `snapshot`, or `error` to make reads fail. */
+export class FakeKuma implements KumaClient {
+  snapshot: KumaSnapshot = { title: 'Homelab', monitors: [] };
+  error: Error | null = null;
+  reads = 0;
+  async fetchStatusPage(): Promise<KumaSnapshot> {
+    this.reads++;
+    if (this.error) throw this.error;
+    return structuredClone(this.snapshot);
   }
 }
 
@@ -356,6 +406,7 @@ export function testContainer(commands: CommandDefinition[] = allCommands) {
   const messenger = new FakeMessenger();
   const mod = new FakeModeration(guild);
   const voice = new FakeVoice(guild);
+  const kuma = new FakeKuma();
   const container = createContainer({
     db: dbHandle.db,
     logger: nullLogger,
@@ -365,6 +416,7 @@ export function testContainer(commands: CommandDefinition[] = allCommands) {
     voice,
     bot: new FakeBot(),
     commands,
+    kuma,
   });
-  return { ...container, guild, messenger, mod, voice, db: dbHandle.db, close: dbHandle.close };
+  return { ...container, guild, messenger, mod, voice, kuma, db: dbHandle.db, close: dbHandle.close };
 }

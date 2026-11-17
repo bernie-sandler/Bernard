@@ -88,6 +88,34 @@ export const settingsSchema = z.object({
       syncIntervalMinutes: z.number().int().min(5).max(1440).default(60),
     })
     .prefault({}),
+
+  /** Live status embed fed by an Uptime Kuma status page. */
+  status: z
+    .object({
+      /** Base URL of Uptime Kuma, e.g. http://tower:3001. null = not configured. */
+      kumaUrl: z
+        .url({ protocol: /^https?$/, error: 'must be an http(s) URL' })
+        .max(500)
+        .nullable()
+        .default(null),
+      /** Slug of the Kuma status page to read (the part after /status/). */
+      slug: z
+        .string()
+        .regex(/^[a-zA-Z0-9_-]{1,100}$/, 'must be a status page slug')
+        .nullable()
+        .default(null),
+      /** Channel holding the pinned status embed. null = no embed. */
+      channelId: channelRef,
+      intervalSeconds: z.number().int().min(60).max(3600).default(60),
+      /** Channel for "went down" / "back up" alerts. null = no alerts. */
+      alertChannelId: channelRef,
+      /** Kuma monitor ID -> role pinged by its alerts. */
+      alertRoles: z
+        .record(z.string().regex(/^\d{1,10}$/), snowflake)
+        .refine((r) => Object.keys(r).length <= 100, 'at most 100 alert roles')
+        .default({}),
+    })
+    .prefault({}),
 });
 
 export type Settings = z.infer<typeof settingsSchema>;

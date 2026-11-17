@@ -263,6 +263,40 @@ export const tempChannels = sqliteTable(
   (t) => [index('temp_channels_guild').on(t.guildId)],
 );
 
+// ── Self-assign role panels ─────────────────────────────────────────────────
+
+export interface RolePanelOption {
+  roleId: string;
+  label: string;
+  emoji: string | null;
+  description: string | null;
+}
+
+export const rolePanels = sqliteTable(
+  'role_panels',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    title: text('title').notNull(),
+    description: text('description').notNull().default(''),
+    /** buttons: one toggle button per role. select: a dropdown menu. */
+    style: text('style', { enum: ['buttons', 'select'] })
+      .notNull()
+      .default('buttons'),
+    /** multi: any number of roles. single: picking one removes the panel's other roles. */
+    mode: text('mode', { enum: ['multi', 'single'] })
+      .notNull()
+      .default('multi'),
+    /** Roles offered, in display order. */
+    options: text('options', { mode: 'json' }).notNull().$type<RolePanelOption[]>().default(sql`'[]'`),
+    /** Where the panel is posted; null until posted. */
+    channelId: text('channel_id'),
+    messageId: text('message_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('role_panels_guild').on(t.guildId)],
+);
+
 // ── Dashboard sessions ──────────────────────────────────────────────────────
 
 export const sessions = sqliteTable(

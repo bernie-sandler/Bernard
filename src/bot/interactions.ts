@@ -1,17 +1,22 @@
 import {
   type AutocompleteInteraction,
+  type ButtonInteraction,
   type ChatInputCommandInteraction,
   type GuildMember,
   type Interaction,
   type InteractionReplyOptions,
   MessageFlags,
+  type StringSelectMenuInteraction,
 } from 'discord.js';
 import { toEmbed, toMemberInfo } from '../discord/adapters.js';
+import { describeDiscordError } from '../discord/errors.js';
 import type { Logger } from '../logger.js';
 import type { CommandExecutor } from '../services/commands/executor.js';
 import type { FlatCommand } from '../services/commands/registry.js';
 import type { Actor } from '../services/commands/types.js';
 import type { Services } from '../services/container.js';
+import { isUserError } from '../services/errors.js';
+import { parsePanelCustomId } from '../services/rolePanels.js';
 import type { CommandResult } from '../shared/commandResult.js';
 
 export function actorFromMember(member: GuildMember): Actor {
@@ -168,10 +173,39 @@ export function createInteractionHandler(deps: {
     }
   }
 
+  /** Role panel buttons and menus. Anyone who can see the panel may use it. */
+  async function handleRolePanel(i: ButtonInteraction | StringSelectMenuInteraction): Promise<void> {
+    const parsed = parsePanelCustomId(i.customId);
+    if (!parsed) return; // not ours
+    if (!i.inCachedGuild() || i.guildId !== services.guild.guildId) {
+      await i.reply({ content: 'This panel only works in its home server.', flags: MessageFlags.Ephemeral });
+      return;
+    }
+    // Acknowledge first: role changes are API calls and Discord allows only 3s for the first reply.
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    let content: string;
+    try {
+      content =
+        parsed.kind === 'button'
+          ? await services.rolePanels.handleButton(i.user.id, parsed.panelId, parsed.roleId)
+          : await services.rolePanels.handleSelect(
+              i.user.id,
+              parsed.panelId,
+              i.isStringSelectMenu() ? i.values : [],
+            );
+    } catch (err) {
+      const readable = isUserError(err) ? err.message : describeDiscordError(err);
+      if (!readable) logger.error({ err, customId: i.customId }, 'Role panel interaction failed');
+      content = readable ?? 'Something went wrong.';
+    }
+    await i.editReply({ content, allowedMentions: { parse: [] } });
+  }
+
   return async (interaction: Interaction): Promise<void> => {
     try {
       if (interaction.isChatInputCommand()) await handleChatInput(interaction);
       else if (interaction.isAutocomplete()) await handleAutocomplete(interaction);
+      else if (interaction.isButton() || interaction.isStringSelectMenu()) await handleRolePanel(interaction);
     } catch (err) {
       logger.error({ err }, 'Interaction handler crashed');
     }

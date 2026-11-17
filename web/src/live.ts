@@ -14,8 +14,10 @@ const INVALIDATES: Record<string, string[][]> = {
   tempVoice: [['overview'], ['voice']],
   tiers: [['tiers'], ['settings'], ['overview'], ['members'], ['member'], ['audit']],
   hubs: [['voice'], ['audit']],
-  settings: [['settings'], ['audit']],
+  settings: [['settings'], ['status'], ['audit']],
   permissions: [['permissions'], ['me'], ['commands'], ['audit']],
+  status: [['status']],
+  rolePanels: [['rolePanels'], ['audit']],
 };
 
 /**

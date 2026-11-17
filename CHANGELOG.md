@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Live status embed fed by Uptime Kuma. Point Bernard at a Kuma status page (the new **Status** dashboard page, or `/status setup`) and it keeps one pinned message up to date with each monitor's state, response time and 24-hour uptime, grouped like the status page. Bernard reads Kuma's public status page API and needs no Kuma login or API key. If Kuma can't be reached, the embed keeps the last known state and says so.
+- Status alerts: with an alert channel set, Bernard posts when a monitor goes down or comes back. Each monitor can ping its own role, for example "MC updates" for the Minecraft server. New commands: `/status show` (`public:status`) and `/status setup`, `post`, `alerts`, `notify`, `refresh` (`config:status`).
+- Self-assign role panels: messages with buttons or a dropdown menu that let members give themselves roles, such as game roles or ping roles like "Movie night". A panel can allow any number of roles or only one. Build them on the new **Role panels** dashboard page and manage posted panels with `/rolepanel list`, `post`, `refresh` and `delete` (`config:rolepanels`). Panels refuse managed roles, roles above the bot, and roles with moderator or admin permissions.
+- The bot asks for the **Pin Messages** permission (to pin the status embed). Existing installs keep working without it; the embed just isn't pinned. Re-invite with `pnpm invite-url` to add it.
+
 ## [0.1.4] - 2026-11-17
 
 ### Added

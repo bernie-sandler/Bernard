@@ -39,6 +39,18 @@ const NAV: NavItem[] = [
     icon: 'M11 5L6 9H3v6h3l5 4V5zM15.5 8.5a5 5 0 0 1 0 7',
   },
   {
+    to: '/status',
+    label: 'Status',
+    nodes: ['config:status'],
+    icon: 'M3 12h4l3-8 4 16 3-8h4',
+  },
+  {
+    to: '/role-panels',
+    label: 'Role panels',
+    nodes: ['config:rolepanels'],
+    icon: 'M20 12l-8 8-9-9V3h8l9 9zM7.5 7.5h.01',
+  },
+  {
     to: '/settings',
     label: 'Settings',
     nodes: ['config:logs', 'config:activity', 'config:settings', 'config:voice', 'config:tiers'],

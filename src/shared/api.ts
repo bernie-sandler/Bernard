@@ -351,3 +351,76 @@ export interface AuditListResponse {
   items: AuditEntryDto[];
   nextBefore: number | null;
 }
+
+// ── Status (Uptime Kuma) ──
+
+export type MonitorStatusDto = 'up' | 'down' | 'pending' | 'maintenance' | 'unknown';
+
+export interface StatusMonitorDto {
+  id: number;
+  name: string;
+  group: string;
+  status: MonitorStatusDto;
+  ping: number | null;
+  message: string;
+  checkedAt: string | null;
+  uptime24h: number | null;
+  /** Role pinged by this monitor's alerts. */
+  alertRoleId: string | null;
+}
+
+export interface StatusResponse {
+  config: {
+    kumaUrl: string | null;
+    slug: string | null;
+    channelId: string | null;
+    intervalSeconds: number;
+    alertChannelId: string | null;
+  };
+  configured: boolean;
+  title: string | null;
+  monitors: StatusMonitorDto[];
+  fetchedAt: string | null;
+  error: string | null;
+  errorSince: string | null;
+  /** Where the pinned embed is. null when not posted. */
+  message: { channelId: string; messageId: string } | null;
+}
+
+export interface StatusTestResponse {
+  title: string;
+  monitors: number;
+}
+
+// ── Role panels ──
+
+export interface RolePanelOptionDto {
+  roleId: string;
+  label: string;
+  emoji: string | null;
+  description: string | null;
+}
+
+export interface RolePanelDto {
+  id: number;
+  title: string;
+  description: string;
+  style: 'buttons' | 'select';
+  mode: 'multi' | 'single';
+  options: RolePanelOptionDto[];
+  channelId: string | null;
+  channelName: string | null;
+}
+
+export interface PanelRoleDto {
+  id: string;
+  name: string;
+  color: number;
+  /** Why the role can't be offered on a panel; null when it can. */
+  problem: string | null;
+}
+
+export interface RolePanelsResponse {
+  panels: RolePanelDto[];
+  roles: PanelRoleDto[];
+}
