@@ -1,6 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import type { ReportRow } from '../services/belltower/service.js';
+import type { ReportRow, SubmittedRow } from '../services/belltower/service.js';
 import type { Services } from '../services/container.js';
 import { panelInputSchema, type RolePanel } from '../services/rolePanels.js';
 import { KumaError } from '../services/status/kuma.js';
@@ -11,6 +11,7 @@ import type {
   RolePanelsResponse,
   StatusResponse,
   StatusTestResponse,
+  SubmittedTicketDto,
 } from '../shared/api.js';
 import { gate, HttpError, parseInput, requireActor } from './http.js';
 
@@ -202,11 +203,23 @@ export function registerIntegrationRoutes(api: FastifyInstance, services: Servic
     closedAt: r.closedAt?.toISOString() ?? null,
     notifiedVia: r.notifiedVia,
   });
+  const submittedDto = (r: SubmittedRow): SubmittedTicketDto => ({
+    cardId: r.cardId,
+    ticketNo: r.ticketNo,
+    title: r.title,
+    submitter: r.submitter,
+    state: r.state,
+    resolution: r.resolution,
+    createdAt: r.createdAt.toISOString(),
+    closedAt: r.closedAt?.toISOString() ?? null,
+  });
   const belltowerResponse = (): BelltowerResponse => {
     const view = services.belltower.view();
     const reports = services.belltower.list();
+    const submitted = services.belltower.listSubmitted();
     return {
       configured: view.configured,
+      panelReady: view.panelReady,
       error: view.error,
       errorSince: view.errorSince,
       lastPollAt: view.lastPollAt,
@@ -214,6 +227,7 @@ export function registerIntegrationRoutes(api: FastifyInstance, services: Servic
       panel: view.panel,
       open: reports.open.map(reportDto),
       recent: reports.recent.map(reportDto),
+      submitted: { open: submitted.open.map(submittedDto), recent: submitted.recent.map(submittedDto) },
     };
   };
 
@@ -232,16 +246,39 @@ export function registerIntegrationRoutes(api: FastifyInstance, services: Servic
         priority: z.enum(['P0', 'P1', 'P2', 'P3']).nullable(),
         column: z.string().trim().max(100).nullable(),
         cooldownSeconds: z.number().int().min(0).max(3600),
+        // Left out: unchanged.
+        mode: z.enum(['api', 'link']).optional(),
+        submitUrl: z
+          .url({
+            protocol: /^https?$/,
+            error: 'The submit page link must be an http:// or https:// address.',
+          })
+          .max(500)
+          .nullable()
+          .optional(),
       }),
       req.body,
     );
+    const current = services.settings.get().belltower;
+    const mode = body.mode ?? current.mode;
+    const submitUrl = body.submitUrl === undefined ? current.submitUrl : body.submitUrl;
+    if (mode === 'link' && !submitUrl) {
+      throw new HttpError(400, 'Paste the submit page link (Settings → Submit page in Belltower).');
+    }
     services.settings.update(auditActor(req), 'settings.belltower', (draft) => {
+      draft.belltower.mode = mode;
+      draft.belltower.submitUrl = submitUrl;
       draft.belltower.enabled = body.enabled;
       draft.belltower.labels = [...new Set(body.labels)];
       draft.belltower.priority = body.priority;
       draft.belltower.column = body.column || null;
       draft.belltower.cooldownSeconds = body.cooldownSeconds;
     });
+    // The panel's button and text depend on the mode, the link and whether reports are paused. The
+    // settings are saved either way, so a Discord error here (say, a link Discord won't take) is logged.
+    await services.belltower
+      .syncPanel()
+      .catch((err) => req.log.warn({ err }, 'Could not update the report panel'));
     return belltowerResponse();
   });
 

@@ -5,7 +5,10 @@ import type { ResultEmbed } from './commandResult.js';
  * (the status embed, role panels). The Discord adapter turns it into embeds and action rows.
  */
 export interface MessageButton {
-  customId: string;
+  /** Sent back to the bot when pressed. Leave empty for a link button (`url`). */
+  customId?: string;
+  /** Makes it a link button that opens this address; `style` is ignored. */
+  url?: string;
   label: string;
   emoji?: string | null;
   style?: 'primary' | 'secondary' | 'success' | 'danger';

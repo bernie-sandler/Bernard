@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadEnv } from '../src/config/env.js';
-import { issueReports } from '../src/db/schema.js';
+import { issueReports, submittedTickets } from '../src/db/schema.js';
 import {
   BelltowerError,
   belltowerUrl,
   describeStatus,
   HttpBelltowerClient,
+  parseTicketPage,
   parseTickets,
 } from '../src/services/belltower/client.js';
 import { plain, REPORT_BUTTON_ID } from '../src/services/belltower/service.js';
@@ -44,6 +45,17 @@ function reporter() {
 }
 
 const rows = () => t.db.select().from(issueReports).all();
+const submitted = () => t.db.select().from(submittedTickets).all();
+
+const SUBMIT_URL = 'https://bt.example/submit/k3y';
+
+/** Switch to link mode (the panel opens Belltower's submit page). */
+function linkMode(c = t, submitUrl: string | null = SUBMIT_URL) {
+  c.services.settings.update(ADMIN, 'settings.belltower', (d) => {
+    d.belltower.mode = 'link';
+    d.belltower.submitUrl = submitUrl;
+  });
+}
 
 beforeEach(() => {
   t = testContainer();
@@ -128,6 +140,46 @@ describe('Belltower client', () => {
       await client.getCards(Array.from({ length: 150 }, (_, i) => i + 1));
       expect(fetchMock).toHaveBeenCalledTimes(2);
       expect(String((fetchMock.mock.calls[1] as unknown[])[0])).toContain('ids=101,');
+    });
+
+    it('reads changed tickets page by page', async () => {
+      const ticket = (id: number, source?: string) => ({
+        id,
+        ticketNo: `261117-${id}`,
+        title: `T${id}`,
+        state: 'received',
+        resolution: null,
+        column: { id: 1, name: 'Triage' },
+        createdAt: '2026-11-17T10:00:00.000Z',
+        updatedAt: '2026-11-17T10:00:00.000Z',
+        archivedAt: null,
+        deletedAt: null,
+        ...(source ? { source, submitter: source === 'submit' ? 'Mum' : null } : {}),
+      });
+      const pages = [
+        { cards: [ticket(1, 'submit')], more: true, next: 'c/1', generatedAt: '2026-11-17T11:00:00.000Z' },
+        { cards: [ticket(2, 'api')], more: false, next: null, generatedAt: '2026-11-17T11:00:01.000Z' },
+      ];
+      const fetchMock = vi.fn(async () => new Response(JSON.stringify(pages.shift()), { status: 200 }));
+      vi.stubGlobal('fetch', fetchMock);
+      const client = new HttpBelltowerClient('http://bt:3000', 'tt_secret');
+      const res = await client.listChanged('1970-01-01T00:00:00.000Z');
+      expect(res.generatedAt).toBe('2026-11-17T11:00:01.000Z');
+      expect(res.tickets.map((x) => [x.id, x.source, x.submitter])).toEqual([
+        [1, 'submit', 'Mum'],
+        [2, 'api', null],
+      ]);
+      const urls = fetchMock.mock.calls.map((c) => String((c as unknown[])[0]));
+      expect(urls).toEqual([
+        'http://bt:3000/api/v1/cards?updatedSince=1970-01-01T00%3A00%3A00.000Z',
+        'http://bt:3000/api/v1/cards?cursor=c%2F1',
+      ]);
+
+      // Belltower before 1.6.0 doesn't say where tickets came from.
+      expect(() =>
+        parseTicketPage({ cards: [ticket(3)], more: false, next: null, generatedAt: 'x' }),
+      ).toThrow(/1\.6\.0/);
+      expect(() => parseTicketPage({ cards: [] })).toThrow(/expected format/);
     });
 
     it('turns failures into readable errors', async () => {
@@ -523,6 +575,8 @@ describe('dashboard routes', () => {
       column: null,
       cooldownSeconds: 30,
       panelChannelId: null,
+      mode: 'api',
+      submitUrl: null,
     });
     const bad = await c.send('PATCH', '/api/belltower/config', { enabled: true });
     expect(bad.statusCode).toBe(400);
@@ -554,6 +608,203 @@ describe('settings migration', () => {
       column: null,
       cooldownSeconds: 120,
       panelChannelId: null,
+      mode: 'api',
+      submitUrl: null,
+    });
+  });
+});
+
+describe('link mode (submit page)', () => {
+  it('answers /report and old panel buttons with the submit page link', async () => {
+    linkMode();
+    const reply = await t.services.belltower.report(reporter(), { service: '', channelId: channel });
+    expect(reply).toContain(SUBMIT_URL);
+    expect(t.belltower.opened).toHaveLength(0);
+    expect(t.services.belltower.unavailableReason()).toContain(SUBMIT_URL);
+
+    t.services.settings.update(ADMIN, 'settings.belltower', (d) => {
+      d.belltower.enabled = false;
+    });
+    await expect(t.services.belltower.report(reporter(), { service: '', channelId: null })).rejects.toThrow(
+      /paused/,
+    );
+    expect(t.services.belltower.unavailableReason()).toMatch(/paused/);
+  });
+
+  it('still needs a service in API mode', async () => {
+    await expect(t.services.belltower.report(reporter(), { service: ' ', channelId: null })).rejects.toThrow(
+      /Say what/,
+    );
+  });
+
+  it('posts a panel whose button opens the submit page, without the API set up', async () => {
+    const c = testContainer(undefined, { belltower: false });
+    try {
+      const ch = c.guild.addChannel('help');
+      linkMode(c, null);
+      await expect(c.services.belltower.setPanelChannel(ADMIN, ch)).rejects.toThrow(/submit page link/);
+      linkMode(c);
+      await c.services.belltower.setPanelChannel(ADMIN, ch);
+      const [posted] = c.messenger.inChannel(ch);
+      expect(posted!.msg.buttons).toEqual([expect.objectContaining({ url: SUBMIT_URL })]);
+      expect(posted!.msg.buttons![0]!.customId).toBeUndefined();
+
+      // Paused: the panel loses its button.
+      c.services.settings.update(ADMIN, 'settings.belltower', (d) => {
+        d.belltower.enabled = false;
+      });
+      await c.services.belltower.syncPanel();
+      expect(c.messenger.inChannel(ch)[0]!.msg.buttons).toBeUndefined();
+
+      // Without the API there's nothing to list, and polling does nothing.
+      expect(await c.services.belltower.poll()).toBe(0);
+    } finally {
+      c.close();
+    }
+  });
+
+  it('lists submit-page tickets and follows them until they are done', async () => {
+    linkMode();
+    t.belltower.submit('Plex – stutters', 'Mum');
+    t.belltower.submit('No sound');
+    await t.services.belltower.report(reporter(), { service: '', channelId: null }); // link only
+    expect(t.belltower.opened).toHaveLength(0);
+    // A ticket opened some other way is not listed.
+    await t.belltower.openCard({ title: 'From Kuma' });
+
+    await t.services.belltower.poll();
+    expect(t.belltower.listed).toEqual(['1970-01-01T00:00:00.000Z']);
+    let list = t.services.belltower.listSubmitted();
+    expect(list.open.map((r) => [r.title, r.submitter, r.state])).toEqual([
+      ['Plex – stutters', 'Mum', 'received'],
+      ['No sound', null, 'received'],
+    ]);
+
+    t.belltower.now += 60_000;
+    t.belltower.setState(1, 'in_progress');
+    t.belltower.setState(2, 'done', 'Fixed');
+    await t.services.belltower.poll();
+    // The next read starts where the last answer left off.
+    expect(t.belltower.listed[1]).toBe(new Date(t.belltower.now - 60_000).toISOString());
+    list = t.services.belltower.listSubmitted();
+    expect(list.open.map((r) => [r.cardId, r.state])).toEqual([[1, 'in_progress']]);
+    expect(list.recent).toMatchObject([{ cardId: 2, state: 'done', resolution: 'Fixed' }]);
+    // Nobody is messaged: Bernard doesn't know who sent them.
+    expect(t.mod.callsTo('dm')).toHaveLength(0);
+
+    // Reopened: back on the open list.
+    t.belltower.now += 60_000;
+    t.belltower.setState(2, 'received');
+    await t.services.belltower.poll();
+    expect(
+      t.services.belltower
+        .listSubmitted()
+        .open.map((r) => r.cardId)
+        .sort(),
+    ).toEqual([1, 2]);
+
+    // Gone without a trace (deleted for good, or out of the token's tags): closed as missing.
+    t.belltower.tickets.delete(1);
+    await t.services.belltower.poll();
+    expect(submitted().find((r) => r.cardId === 1)).toMatchObject({ state: 'missing' });
+    expect(submitted().find((r) => r.cardId === 1)!.closedAt).not.toBeNull();
+  });
+
+  it('keeps following reports filed through the API before the switch', async () => {
+    await t.services.belltower.report(reporter(), { service: 'Plex', channelId: channel });
+    linkMode();
+    t.belltower.setState(1, 'done', 'Fixed');
+    expect(await t.services.belltower.poll()).toBe(1);
+    expect(t.mod.callsTo('dm')).toHaveLength(1);
+  });
+
+  it('keeps following those reports while submit-page tickets cannot be read', async () => {
+    await t.services.belltower.report(reporter(), { service: 'Plex', channelId: channel });
+    linkMode();
+    t.belltower.old = true;
+    t.belltower.setState(1, 'done', 'Fixed');
+    expect(await t.services.belltower.poll()).toBe(1);
+    expect(t.mod.callsTo('dm')).toHaveLength(1);
+    // The read of the reports worked, but the submit-page error stays.
+    expect(t.services.belltower.view().error).toMatch(/1\.6\.0/);
+    await t.services.belltower.poll();
+    expect(t.services.belltower.view().error).toMatch(/1\.6\.0/);
+  });
+
+  it('shows an old Belltower or a failed read on the dashboard, and reads nothing in API mode', async () => {
+    t.belltower.submit('No sound');
+    await t.services.belltower.poll();
+    expect(t.belltower.listed).toHaveLength(0);
+
+    linkMode();
+    t.belltower.old = true;
+    await t.services.belltower.poll();
+    expect(t.services.belltower.view().error).toMatch(/1\.6\.0/);
+    expect(submitted()).toHaveLength(0);
+
+    t.belltower.old = false;
+    await t.services.belltower.poll();
+    expect(t.services.belltower.view().error).toBeNull();
+    expect(submitted()).toHaveLength(1);
+  });
+});
+
+describe('link mode dashboard routes', () => {
+  let h: Awaited<ReturnType<typeof apiHarness>>;
+  beforeEach(async () => {
+    h = await apiHarness();
+  });
+  afterEach(() => h.close());
+
+  const base = { enabled: true, labels: ['Discord'], priority: null, column: null, cooldownSeconds: 120 };
+
+  it('switches mode, checks the link, and lists submit-page tickets', async () => {
+    const c = await h.owner();
+    const ch = h.t.guild.addChannel('help');
+    await h.t.services.belltower.setPanelChannel(ADMIN, ch);
+
+    expect((await c.send('PATCH', '/api/belltower/config', { ...base, mode: 'link' })).statusCode).toBe(400);
+    const ftp = await c.send('PATCH', '/api/belltower/config', {
+      ...base,
+      mode: 'link',
+      submitUrl: 'ftp://bt/submit/x',
+    });
+    expect(ftp.statusCode).toBe(400);
+
+    const saved = await c.send('PATCH', '/api/belltower/config', {
+      ...base,
+      mode: 'link',
+      submitUrl: SUBMIT_URL,
+    });
+    expect(saved.statusCode).toBe(200);
+    expect(saved.json()).toMatchObject({ panelReady: true, config: { mode: 'link', submitUrl: SUBMIT_URL } });
+    // The posted panel now links to the submit page.
+    expect(h.t.messenger.inChannel(ch)[0]!.msg.buttons).toEqual([
+      expect.objectContaining({ url: SUBMIT_URL }),
+    ]);
+
+    // A panel Discord won't update doesn't fail the save.
+    h.t.messenger.edit = async () => {
+      throw new Error('Invalid Form Body');
+    };
+    h.t.messenger.send = async () => {
+      throw new Error('Invalid Form Body');
+    };
+    const unposted = await c.send('PATCH', '/api/belltower/config', { ...base, enabled: false });
+    expect(unposted.statusCode).toBe(200);
+    expect(unposted.json().config.enabled).toBe(false);
+
+    // Saving without the new fields keeps them.
+    const kept = await c.send('PATCH', '/api/belltower/config', { ...base, cooldownSeconds: 60 });
+    expect(kept.json().config).toMatchObject({ mode: 'link', submitUrl: SUBMIT_URL, cooldownSeconds: 60 });
+
+    h.t.belltower.submit('Plex – stutters', 'Mum');
+    const polled = await c.send('POST', '/api/belltower/poll');
+    expect(polled.json().submitted).toMatchObject({
+      open: [
+        { cardId: 1, ticketNo: '261117-1', title: 'Plex – stutters', submitter: 'Mum', state: 'received' },
+      ],
+      recent: [],
     });
   });
 });

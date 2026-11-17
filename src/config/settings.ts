@@ -137,6 +137,13 @@ export const settingsSchema = z.object({
     .object({
       /** Accept new reports. Off keeps watching tickets already reported. */
       enabled: z.boolean().default(true),
+      /**
+       * api: Bernard files tickets through Belltower's API. link: the panel button (and /report) send
+       * members to Belltower's submit page, and Bernard lists what comes in through it.
+       */
+      mode: z.enum(['api', 'link']).default('api'),
+      /** The submit page's address (…/submit/<key>), for link mode. Checked when saved. */
+      submitUrl: z.string().trim().max(500).nullable().default(null),
       /** Belltower tags put on every reported ticket. */
       labels: z.array(z.string().trim().min(1).max(50)).max(10).default(['Discord']),
       priority: z.enum(['P0', 'P1', 'P2', 'P3']).nullable().default(null),

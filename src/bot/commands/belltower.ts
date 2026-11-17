@@ -8,9 +8,9 @@ export const reportCommand = defineCommand({
   description: "Tell the admins something isn't working (you'll get a message when it's fixed)",
   node: 'public:report',
   options: {
+    // Not required: when the panel links to Belltower's submit page, /report only answers with the link.
     service: opt.string({
       description: "What isn't working, e.g. Plex",
-      required: true,
       autocomplete: true,
       maxLength: 100,
     }),
@@ -20,7 +20,7 @@ export const reportCommand = defineCommand({
   async execute(ctx, input) {
     const text = await ctx.services.belltower.report(
       { userId: ctx.actor.userId, username: ctx.actor.username, displayName: ctx.actor.displayName },
-      { service: input.service, details: input.details ?? null, channelId: ctx.channelId ?? null },
+      { service: input.service ?? '', details: input.details ?? null, channelId: ctx.channelId ?? null },
     );
     return ok(text);
   },

@@ -141,10 +141,9 @@ export function toMessagePayload(msg: OutgoingMessage) {
     rows.push(
       new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(
         buttons.slice(i, i + 5).map((b) => {
-          const btn = new ButtonBuilder()
-            .setCustomId(b.customId)
-            .setLabel(b.label.slice(0, 80))
-            .setStyle(BUTTON_STYLES[b.style ?? 'secondary']);
+          const btn = new ButtonBuilder().setLabel(b.label.slice(0, 80));
+          if (b.url) btn.setURL(b.url).setStyle(ButtonStyle.Link);
+          else btn.setCustomId(b.customId ?? '').setStyle(BUTTON_STYLES[b.style ?? 'secondary']);
           if (b.emoji) btn.setEmoji(b.emoji);
           return btn;
         }),

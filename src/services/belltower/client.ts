@@ -4,6 +4,7 @@ import { z } from 'zod';
  * Talks to Belltower's automation API (docs/API-V1.md in Belltower), version 1:
  *   POST /api/v1/cards       open a ticket, or add a note to the open one with the same dedupeKey
  *   GET  /api/v1/cards?ids=  read tickets (Belltower 1.6+, full tokens only)
+ *   GET  /api/v1/cards?updatedSince=  tickets changed since a time, with where each came from (1.6.0)
  */
 
 export type TicketState = 'received' | 'in_progress' | 'waiting' | 'done';
@@ -35,10 +36,27 @@ export interface TicketInfo {
   deletedAt: string | null;
 }
 
+export interface ListedTicket extends TicketInfo {
+  createdAt: string;
+  updatedAt: string;
+  /** submit (the submit page), api, recurring or manual. */
+  source: string;
+  /** The name typed on the submit page, or null. */
+  submitter: string | null;
+}
+
+export interface ChangedTickets {
+  tickets: ListedTicket[];
+  /** Belltower's time for the answer: the `since` of the next call. */
+  generatedAt: string;
+}
+
 export interface BelltowerClient {
   openCard(card: NewCard): Promise<OpenedCard>;
   /** The tickets among `ids` that still exist and the token can see. */
   getCards(ids: number[]): Promise<TicketInfo[]>;
+  /** Every ticket changed at or after `since` (ISO time), all pages. */
+  listChanged(since: string): Promise<ChangedTickets>;
   /** Check the address, the token, and that Belltower can be read back (1.6+). */
   ping(): Promise<void>;
 }
@@ -61,6 +79,24 @@ const ticketSchema = cardRef.extend({
 });
 
 const listSchema = z.object({ cards: z.array(z.unknown()) });
+
+const pageSchema = z.object({
+  cards: z.array(z.unknown()),
+  more: z.boolean(),
+  next: z.string().nullable(),
+  generatedAt: z.string(),
+});
+
+const listedSchema = ticketSchema.extend({
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  // Optional so an older Belltower gets a readable error instead of "not in the expected format".
+  source: z.string().optional(),
+  submitter: z.string().nullable().optional(),
+});
+
+/** Most pages one listChanged call reads (200 tickets each). */
+export const MAX_PAGES = 500;
 
 /** Most ids one GET /api/v1/cards call takes. */
 export const IDS_PER_REQUEST = 100;
@@ -155,9 +191,47 @@ export class HttpBelltowerClient implements BelltowerClient {
     return out;
   }
 
+  async listChanged(since: string): Promise<ChangedTickets> {
+    const tickets: ListedTicket[] = [];
+    let path = `api/v1/cards?updatedSince=${encodeURIComponent(since)}`;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const answer = parseTicketPage(await this.request(path, 'read'));
+      tickets.push(...answer.tickets);
+      if (!answer.next) return { tickets, generatedAt: answer.generatedAt };
+      path = `api/v1/cards?cursor=${encodeURIComponent(answer.next)}`;
+    }
+    throw new BelltowerError('Belltower sent more changed tickets than Bernard reads at once.');
+  }
+
   async ping(): Promise<void> {
     parseTickets(await this.request('api/v1/cards?ids=1', 'read'));
   }
+}
+
+/** Parse one page of GET /api/v1/cards?updatedSince= / ?cursor=. Exported for tests. */
+export function parseTicketPage(json: unknown): ChangedTickets & { next: string | null } {
+  const page = pageSchema.safeParse(json);
+  if (!page.success) throw new BelltowerError("Belltower's answer wasn't in the expected format.");
+  const tickets = page.data.cards.map((raw): ListedTicket => {
+    const t = listedSchema.safeParse(raw);
+    if (!t.success) throw new BelltowerError("Belltower's answer wasn't in the expected format.");
+    const { id, ticketNo, title, state, resolution, archivedAt, deletedAt, createdAt, updatedAt } = t.data;
+    if (t.data.source === undefined) {
+      throw new BelltowerError(
+        "Belltower doesn't say where tickets came from. Update it to 1.6.0 or later to list submit-page tickets.",
+      );
+    }
+    return {
+      ...{ id, ticketNo, title, state, resolution, archivedAt, deletedAt, createdAt, updatedAt },
+      source: t.data.source,
+      submitter: t.data.submitter ?? null,
+    };
+  });
+  return {
+    tickets,
+    next: page.data.more ? page.data.next : null,
+    generatedAt: page.data.generatedAt,
+  };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNotNull, isNull } from 'drizzle-orm';
 import type { Db } from '../../db/client.js';
-import { issueReports } from '../../db/schema.js';
+import { issueReports, submittedTickets } from '../../db/schema.js';
 import type { GuildPort, MessengerPort, ModerationPort } from '../../discord/ports.js';
 import type { Logger } from '../../logger.js';
 import { COLORS } from '../../shared/commandResult.js';
@@ -11,15 +11,25 @@ import { UserError } from '../errors.js';
 import type { LiveEvents } from '../liveEvents.js';
 import type { SettingsService } from '../settings.js';
 import type { StatusService } from '../status/service.js';
-import { type BelltowerClient, BelltowerError, type NewCard, type TicketInfo } from './client.js';
+import {
+  type BelltowerClient,
+  BelltowerError,
+  type ListedTicket,
+  type NewCard,
+  type TicketInfo,
+} from './client.js';
 
 const PANEL_KEY = 'belltower.panel';
+/** Belltower's generatedAt from the last read of submit-page tickets: where the next read starts. */
+const SUBMIT_SINCE_KEY = 'belltower.submitSince';
+const EPOCH = '1970-01-01T00:00:00.000Z';
 
 /** Custom IDs of the panel's button and the modal it opens. */
 export const REPORT_BUTTON_ID = 'bt:report';
 export const REPORT_MODAL_ID = 'bt:report-modal';
 
 export type ReportRow = typeof issueReports.$inferSelect;
+export type SubmittedRow = typeof submittedTickets.$inferSelect;
 
 export interface Reporter {
   userId: string;
@@ -38,6 +48,8 @@ export interface ReportInput {
 export interface BelltowerView {
   /** BELLTOWER_URL and BELLTOWER_TOKEN are set. */
   configured: boolean;
+  /** The report panel can be posted: the API is set up, or (link mode) the submit page link is. */
+  panelReady: boolean;
   /** Why the last check on Belltower failed, if it did. */
   error: string | null;
   errorSince: string | null;
@@ -63,6 +75,15 @@ export interface BelltowerDeps {
 
 /** States after which a report is closed and its reporter told. */
 const FINAL_STATES = new Set(['done', 'archived', 'deleted', 'missing']);
+
+/** A ticket's state for Bernard: Belltower's, or done / archived / deleted / missing. */
+function stateOf(t: TicketInfo | undefined): string {
+  if (!t) return 'missing';
+  if (t.deletedAt) return 'deleted';
+  if (t.state === 'done') return 'done';
+  if (t.archivedAt) return 'archived';
+  return t.state;
+}
 
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 const oneLine = (s: string) => s.replace(/\s+/g, ' ').trim();
@@ -98,9 +119,16 @@ export class BelltowerService {
     return this.d.client !== null;
   }
 
+  /** Whether the panel can be posted with the current settings. */
+  panelReady(): boolean {
+    const cfg = this.d.settings.get().belltower;
+    return cfg.mode === 'link' ? Boolean(cfg.submitUrl) : this.configured();
+  }
+
   view(): BelltowerView {
     return {
       configured: this.configured(),
+      panelReady: this.panelReady(),
       error: this.error,
       errorSince: this.errorSince ? new Date(this.errorSince).toISOString() : null,
       lastPollAt: this.lastPollAt ? new Date(this.lastPollAt).toISOString() : null,
@@ -147,15 +175,32 @@ export class BelltowerService {
 
   /** Why a member can't report right now, or null. Checked before the panel opens its form. */
   unavailableReason(): string | null {
+    const cfg = this.d.settings.get().belltower;
+    // An old panel button pressed after switching to link mode.
+    if (cfg.mode === 'link') return this.linkReply();
     if (!this.d.client) return "Reporting isn't set up on this server.";
-    if (!this.d.settings.get().belltower.enabled) {
-      return 'Reports are paused right now. Please tell an admin directly.';
-    }
+    if (!cfg.enabled) return 'Reports are paused right now. Please tell an admin directly.';
     return null;
+  }
+
+  /** Link mode's answer to /report and the panel: where the request form is. */
+  private linkReply(): string {
+    const cfg = this.d.settings.get().belltower;
+    if (!cfg.enabled) return 'Reports are paused right now. Please tell an admin directly.';
+    if (!cfg.submitUrl) return "Reporting isn't set up on this server.";
+    return (
+      `Report it on the request form: ${cfg.submitUrl}\n` +
+      "You'll get a ticket number and a link to check on it there."
+    );
   }
 
   /** File a report. Returns the reply for the reporter. */
   async report(reporter: Reporter, input: ReportInput): Promise<string> {
+    const cfg = this.d.settings.get().belltower;
+    if (cfg.mode === 'link') {
+      if (!cfg.enabled || !cfg.submitUrl) throw new UserError(this.linkReply());
+      return this.linkReply();
+    }
     if (this.inFlight.has(reporter.userId)) throw new UserError('Your last report is still being sent.');
     this.inFlight.add(reporter.userId);
     try {
@@ -268,6 +313,100 @@ export class BelltowerService {
   private async doPoll(): Promise<number> {
     const client = this.d.client;
     if (!client) return 0;
+    let syncFailed = false;
+    if (this.d.settings.get().belltower.mode === 'link') {
+      try {
+        if (await this.syncSubmissions(client)) this.d.live?.publish('belltower');
+        this.clearError();
+        this.lastPollAt = this.now();
+      } catch (err) {
+        // Keep following reports filed before the switch, but leave this error on the dashboard.
+        this.setError(err);
+        this.d.live?.publish('belltower');
+        syncFailed = true;
+      }
+    }
+    return this.pollReports(client, syncFailed);
+  }
+
+  /**
+   * Link mode: read the tickets changed since the last read and keep the submit-page ones, then
+   * re-check the open ones that didn't change, to catch tickets that vanished. Returns whether
+   * anything changed here.
+   */
+  private async syncSubmissions(client: BelltowerClient): Promise<boolean> {
+    const since = this.d.state.get(SUBMIT_SINCE_KEY) || EPOCH;
+    const { tickets, generatedAt } = await client.listChanged(since);
+    let changed = false;
+    const seen = new Set<number>();
+    for (const t of tickets) {
+      if (t.source !== 'submit') continue;
+      seen.add(t.id);
+      if (this.storeSubmission(t, stateOf(t))) changed = true;
+    }
+    const stale = this.d.db
+      .select({ cardId: submittedTickets.cardId })
+      .from(submittedTickets)
+      .where(and(eq(submittedTickets.guildId, this.d.guildId), isNull(submittedTickets.closedAt)))
+      .all()
+      .map((r) => r.cardId)
+      .filter((id) => !seen.has(id));
+    if (stale.length) {
+      const found = new Set((await client.getCards(stale)).map((t) => t.id));
+      for (const cardId of stale) {
+        if (found.has(cardId)) continue;
+        this.d.db
+          .update(submittedTickets)
+          .set({ state: 'missing', closedAt: new Date(this.now()) })
+          .where(and(eq(submittedTickets.guildId, this.d.guildId), eq(submittedTickets.cardId, cardId)))
+          .run();
+        changed = true;
+      }
+    }
+    this.d.state.set(SUBMIT_SINCE_KEY, generatedAt);
+    return changed;
+  }
+
+  /** Insert or update one submit-page ticket. Returns whether the stored row changed. */
+  private storeSubmission(t: ListedTicket, state: string): boolean {
+    const base = and(eq(submittedTickets.guildId, this.d.guildId), eq(submittedTickets.cardId, t.id));
+    const existing = this.d.db.select().from(submittedTickets).where(base).get();
+    const final = FINAL_STATES.has(state);
+    const values = {
+      ticketNo: t.ticketNo,
+      title: t.title.slice(0, 300),
+      submitter: t.submitter?.slice(0, 100) ?? null,
+      state,
+      resolution: state === 'done' ? t.resolution : null,
+      closedAt: final ? (existing?.closedAt ?? new Date(this.now())) : null,
+    };
+    if (!existing) {
+      const created = Date.parse(t.createdAt);
+      this.d.db
+        .insert(submittedTickets)
+        .values({
+          guildId: this.d.guildId,
+          cardId: t.id,
+          createdAt: new Date(Number.isNaN(created) ? this.now() : created),
+          ...values,
+        })
+        .run();
+      return true;
+    }
+    const same =
+      existing.ticketNo === values.ticketNo &&
+      existing.title === values.title &&
+      existing.submitter === values.submitter &&
+      existing.state === values.state &&
+      existing.resolution === values.resolution &&
+      (existing.closedAt === null) === (values.closedAt === null);
+    if (same) return false;
+    this.d.db.update(submittedTickets).set(values).where(base).run();
+    return true;
+  }
+
+  /** `keepError`: the submit-page read failed this round, so a working read here doesn't clear it. */
+  private async pollReports(client: BelltowerClient, keepError = false): Promise<number> {
     const open = this.d.db
       .select()
       .from(issueReports)
@@ -275,7 +414,7 @@ export class BelltowerService {
       .all();
     if (open.length === 0) {
       // Nothing to read, but don't leave an old error on the dashboard: check whether it's gone.
-      if (this.error) {
+      if (this.error && !keepError) {
         await client
           .ping()
           .then(() => this.clearError())
@@ -294,22 +433,16 @@ export class BelltowerService {
       this.d.live?.publish('belltower');
       return 0;
     }
-    this.clearError();
-    this.lastPollAt = this.now();
+    if (!keepError) {
+      this.clearError();
+      this.lastPollAt = this.now();
+    }
 
     const byId = new Map(tickets.map((t) => [t.id, t]));
     let closed = 0;
     for (const row of open) {
       const t = byId.get(row.cardId);
-      const state = !t
-        ? 'missing'
-        : t.deletedAt
-          ? 'deleted'
-          : t.state === 'done'
-            ? 'done'
-            : t.archivedAt
-              ? 'archived'
-              : t.state;
+      const state = stateOf(t);
       const ticketNo = t?.ticketNo ?? row.ticketNo;
       const resolution = t?.resolution ?? null;
       if (!FINAL_STATES.has(state)) {
@@ -380,6 +513,26 @@ export class BelltowerService {
     };
   }
 
+  /** Open submit-page tickets, and the latest closed ones (link mode's dashboard lists). */
+  listSubmitted(recentLimit = 25): { open: SubmittedRow[]; recent: SubmittedRow[] } {
+    const base = eq(submittedTickets.guildId, this.d.guildId);
+    return {
+      open: this.d.db
+        .select()
+        .from(submittedTickets)
+        .where(and(base, isNull(submittedTickets.closedAt)))
+        .orderBy(desc(submittedTickets.createdAt))
+        .all(),
+      recent: this.d.db
+        .select()
+        .from(submittedTickets)
+        .where(and(base, isNotNull(submittedTickets.closedAt)))
+        .orderBy(desc(submittedTickets.closedAt))
+        .limit(recentLimit)
+        .all(),
+    };
+  }
+
   /** Stop watching reports (they won't be notified). Used by the dashboard. */
   dismiss(ids: number[]): number {
     if (ids.length === 0) return 0;
@@ -401,6 +554,28 @@ export class BelltowerService {
   // ── The "Report an issue" panel ──
 
   renderPanel(): OutgoingMessage {
+    const cfg = this.d.settings.get().belltower;
+    if (cfg.mode === 'link') {
+      if (!cfg.enabled || !cfg.submitUrl) {
+        return {
+          embed: {
+            title: 'Something not working?',
+            description: 'Reports are paused right now. Please tell an admin directly.',
+            color: COLORS.info,
+          },
+        };
+      }
+      return {
+        embed: {
+          title: 'Something not working?',
+          description:
+            'Press **Report an issue** to open the request form. You get a ticket number and a link ' +
+            'to check on it.',
+          color: COLORS.info,
+        },
+        buttons: [{ url: cfg.submitUrl, label: 'Report an issue', emoji: '🛎️' }],
+      };
+    }
     return {
       embed: {
         title: 'Something not working?',
@@ -429,7 +604,13 @@ export class BelltowerService {
   /** Post the panel in a channel (moving it from where it was), or take it down with null. */
   async setPanelChannel(actor: AuditActor, channelId: string | null): Promise<BelltowerView> {
     if (channelId) {
-      this.requireClient();
+      if (!this.panelReady()) {
+        throw new UserError(
+          this.d.settings.get().belltower.mode === 'link'
+            ? 'Set the submit page link first.'
+            : "Reporting isn't set up on this server.",
+        );
+      }
       const c = this.d.guild.getChannel(channelId);
       if (!c || (c.kind !== 'text' && c.kind !== 'announcement')) {
         throw new UserError('Pick a text or announcement channel for the report panel.');
@@ -451,7 +632,7 @@ export class BelltowerService {
 
   /** Make the posted panel match the settings: edit it, re-post it if it was deleted, or remove it. */
   async syncPanel(): Promise<void> {
-    const channelId = this.configured() ? this.d.settings.get().belltower.panelChannelId : null;
+    const channelId = this.panelReady() ? this.d.settings.get().belltower.panelChannelId : null;
     const stored = this.storedPanel();
     if (stored && stored.channelId !== channelId) {
       await this.d.messenger.delete(stored.channelId, stored.messageId).catch(() => {});
