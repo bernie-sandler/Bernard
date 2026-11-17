@@ -47,6 +47,11 @@ export interface StatusDeps {
   now?: () => number;
 }
 
+/** Discord allows 6000 characters per embed in total; stay well clear of it. */
+const EMBED_BUDGET = 5500;
+/** Discord's limit for one field value. */
+const FIELD_LIMIT = 1024;
+
 const ts = (ms: number, style: 'R' | 'f' = 'R') => `<t:${Math.floor(ms / 1000)}:${style}>`;
 const clip = (s: string, n: number) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
@@ -57,7 +62,7 @@ export function formatUptime(u: number | null): string | null {
 }
 
 function monitorLine(m: KumaMonitor): string {
-  const bits = [`${ICONS[m.status]} **${m.name}**`];
+  const bits = [`${ICONS[m.status]} **${clip(m.name, 100)}**`];
   if (m.status === 'up' && m.ping !== null) bits.push(`${Math.round(m.ping)} ms`);
   if (m.status === 'maintenance') bits.push('maintenance');
   const uptime = formatUptime(m.uptime24h);
@@ -77,9 +82,11 @@ export function buildStatusEmbed(
   const lines: string[] = [];
   if (!snapshot) lines.push('No status yet.');
   else if (monitors.length === 0) lines.push('The status page has no monitors.');
-  else if (down.length > 0)
-    lines.push(down.length === 1 ? `**${down[0]!.name}** is down.` : `**${down.length} services** are down.`);
-  else if (degraded.length > 0) lines.push('Some services need attention.');
+  else if (down.length > 0) {
+    // Name every down monitor up front, so the length limits below can never hide one.
+    const names = down.map((m) => `**${clip(m.name, 100)}**`);
+    lines.push(clip(`${names.join(', ')} ${down.length === 1 ? 'is' : 'are'} down.`, 1500));
+  } else if (degraded.length > 0) lines.push('Some services need attention.');
   else lines.push('Everything is up.');
   if (opts.error) {
     lines.push(
@@ -88,12 +95,33 @@ export function buildStatusEmbed(
     if (snapshot) lines.push('Showing the last known status.');
   }
 
+  const title = clip(snapshot?.title ?? 'Server status', 256);
+  const description = lines.join('\n');
   const groups = new Map<string, KumaMonitor[]>();
   for (const m of monitors) groups.set(m.group, [...(groups.get(m.group) ?? []), m]);
-  const fields = [...groups.entries()].slice(0, 25).map(([name, list]) => ({
-    name: clip(name, 256),
-    value: clip(list.map(monitorLine).join('\n'), 1024),
-  }));
+
+  // Whole lines only, within each field's and the embed's limits; the rest become "+N more".
+  let used = title.length + description.length + 'Updated'.length;
+  const fields: { name: string; value: string }[] = [];
+  for (const [group, list] of groups) {
+    if (fields.length >= 25) break;
+    const name = clip(group, 256);
+    const more = (n: number) => `+${n} more`;
+    const room = Math.min(FIELD_LIMIT, EMBED_BUDGET - used - name.length) - more(list.length).length - 1;
+    const shown: string[] = [];
+    let len = 0;
+    for (const m of list) {
+      const line = monitorLine(m);
+      if (len + line.length + 1 > room) break;
+      shown.push(line);
+      len += line.length + 1;
+    }
+    if (shown.length === 0) continue;
+    const hidden = list.length - shown.length;
+    const value = hidden > 0 ? [...shown, more(hidden)].join('\n') : shown.join('\n');
+    fields.push({ name, value });
+    used += name.length + value.length;
+  }
 
   const color = opts.error
     ? COLORS.neutral
@@ -104,8 +132,8 @@ export function buildStatusEmbed(
         : COLORS.success;
 
   return {
-    title: clip(snapshot?.title ?? 'Server status', 256),
-    description: lines.join('\n'),
+    title,
+    description,
     color,
     fields,
     footer: 'Updated',
@@ -124,6 +152,9 @@ export class StatusService {
   private errorSince: number | null = null;
   private lastRunAt = 0;
   private running: Promise<StatusView> | null = null;
+  /** Bumped when the status page changes, so a read of the old page still in flight is thrown away. */
+  private generation = 0;
+  private runningGeneration = -1;
   /** Last up/down state per monitor, to detect transitions. Pending/maintenance don't change it. */
   private lastDefinite = new Map<number, { status: 'up' | 'down'; since: number }>();
   private baselined = false;
@@ -142,6 +173,7 @@ export class StatusService {
         this.errorSince = null;
         this.lastDefinite.clear();
         this.baselined = false;
+        this.generation++;
       }
       if (JSON.stringify(a) !== JSON.stringify(b)) this.lastRunAt = 0;
     });
@@ -177,29 +209,46 @@ export class StatusService {
     return this.refresh();
   }
 
-  /** Read Kuma, send alerts for changes, and update the embed. Concurrent calls share one run. */
+  /**
+   * Read Kuma, send alerts for changes, and update the embed. Concurrent calls share one run, unless
+   * the status page changed since that run started: then a new run is queued after it.
+   */
   refresh(): Promise<StatusView> {
-    if (!this.running) {
-      this.running = this.doRefresh().finally(() => {
-        this.running = null;
+    if (this.running && this.runningGeneration === this.generation) return this.running;
+    const prior = this.running ?? Promise.resolve();
+    const run: Promise<StatusView> = prior
+      .catch(() => {})
+      .then(() => this.doRefresh())
+      .finally(() => {
+        if (this.running === run) this.running = null;
       });
-    }
-    return this.running;
+    this.running = run;
+    this.runningGeneration = this.generation;
+    return run;
   }
 
   private async doRefresh(): Promise<StatusView> {
     this.lastRunAt = this.now();
     const s = this.d.settings.get().status;
-    if (!s.kumaUrl || !s.slug) return this.view();
+    if (!s.kumaUrl || !s.slug) {
+      // Not (or no longer) configured: take down an embed left from before.
+      await this.syncMessage().catch((err) =>
+        this.d.logger.warn({ err }, 'Could not remove the status embed'),
+      );
+      return this.view();
+    }
 
+    const generation = this.generation;
     try {
       const snapshot = await this.d.kuma.fetchStatusPage(s.kumaUrl, s.slug);
+      if (generation !== this.generation) return this.view(); // the page changed meanwhile
       this.snapshot = snapshot;
       this.fetchedAt = this.now();
       this.error = null;
       this.errorSince = null;
       await this.handleTransitions(snapshot);
     } catch (err) {
+      if (generation !== this.generation) return this.view();
       this.error = err instanceof KumaError ? err.message : 'Unexpected error reading Uptime Kuma.';
       this.errorSince ??= this.now();
       if (!(err instanceof KumaError)) this.d.logger.error({ err }, 'Status refresh failed');
@@ -273,7 +322,7 @@ export class StatusService {
   }
 
   private async syncMessage(): Promise<void> {
-    const channelId = this.d.settings.get().status.channelId;
+    const channelId = this.configured() ? this.d.settings.get().status.channelId : null;
     const stored = this.storedMessage();
     if (stored && stored.channelId !== channelId) {
       // The embed moved (or was turned off): remove the old one.

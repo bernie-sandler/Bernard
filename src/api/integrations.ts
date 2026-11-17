@@ -79,7 +79,7 @@ export function registerIntegrationRoutes(api: FastifyInstance, services: Servic
       z.object({
         kumaUrl: kumaUrl.nullable(),
         slug: kumaSlug.nullable(),
-        intervalSeconds: z.number().int().min(30).max(3600),
+        intervalSeconds: z.number().int().min(60).max(3600),
         alertChannelId: snowflake.nullable(),
       }),
       req.body,

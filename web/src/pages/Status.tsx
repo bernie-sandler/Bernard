@@ -104,10 +104,10 @@ function ConnectionCard({ d }: { d: StatusResponse }) {
           </Field>
         </div>
         <div className="grid gap-3 sm:grid-cols-[10rem_1fr]">
-          <Field label="Update every (s)" hint="30–3600">
+          <Field label="Update every (s)" hint="60–3600">
             <Input
               type="number"
-              min={30}
+              min={60}
               max={3600}
               value={interval}
               onChange={(e) => setIntervalSeconds(e.target.value)}

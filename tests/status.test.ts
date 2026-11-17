@@ -127,6 +127,22 @@ describe('status embed', () => {
     expect(formatUptime(1)).toBe('100%');
   });
 
+  it("stays under Discord's embed limits and never hides a down monitor", () => {
+    const monitors = Array.from({ length: 300 }, (_, i) =>
+      monitor(i, `Service number ${i} with a long name`, i === 299 ? 'down' : 'up', { group: `G${i % 3}` }),
+    );
+    const embed = buildStatusEmbed({ title: 'Big', monitors }, { error: null, errorSince: null, now: 0 });
+    const total =
+      (embed.title?.length ?? 0) +
+      (embed.description?.length ?? 0) +
+      (embed.footer?.length ?? 0) +
+      (embed.fields ?? []).reduce((n, f) => n + f.name.length + f.value.length, 0);
+    expect(total).toBeLessThanOrEqual(6000);
+    for (const f of embed.fields ?? []) expect(f.value.length).toBeLessThanOrEqual(1024);
+    expect(embed.description).toContain('**Service number 299 with a long name** is down');
+    expect(embed.fields?.[0]?.value).toMatch(/\+\d+ more$/);
+  });
+
   it('posts and pins one message, then edits it in place', async () => {
     configure();
     await t.services.status.setChannel(ADMIN, statusChannel);
@@ -154,6 +170,18 @@ describe('status embed', () => {
     await t.services.status.setChannel(ADMIN, other);
     expect(t.messenger.inChannel(statusChannel)).toHaveLength(0);
     expect(t.messenger.inChannel(other)).toHaveLength(1);
+  });
+
+  it('takes the embed down when Kuma is disconnected', async () => {
+    configure();
+    await t.services.status.setChannel(ADMIN, statusChannel);
+    t.services.settings.update(ADMIN, 'settings.status', (d) => {
+      d.status.kumaUrl = null;
+      d.status.slug = null;
+    });
+    const view = await t.services.status.refresh();
+    expect(view.message).toBeNull();
+    expect(t.messenger.inChannel(statusChannel)).toHaveLength(0);
   });
 
   it('refuses a channel the bot cannot post in, and posting before Kuma is set up', async () => {
@@ -250,6 +278,34 @@ describe('status alerts', () => {
     });
     setStatuses([1, 'Tower', 'down'], [2, 'Plex', 'down'], [3, 'Minecraft', 'down']);
     await t.services.status.refresh();
+    expect(t.messenger.inChannel(alertChannel)).toHaveLength(0);
+  });
+
+  it('throws away a read of the old page when the page changes mid-read', async () => {
+    configure((s) => {
+      s.alertChannelId = alertChannel;
+    });
+    await t.services.status.refresh();
+    let release!: () => void;
+    const slow = new Promise<void>((r) => {
+      release = r;
+    });
+    const original = t.kuma.fetchStatusPage.bind(t.kuma);
+    t.kuma.fetchStatusPage = async () => {
+      await slow;
+      return { title: 'Old page', monitors: [monitor(1, 'Tower', 'down')] };
+    };
+    const inFlight = t.services.status.refresh();
+    t.services.settings.update(ADMIN, 'settings.status', (d) => {
+      d.status.slug = 'other';
+    });
+    t.kuma.fetchStatusPage = original;
+    t.kuma.snapshot = { title: 'New page', monitors: [monitor(9, 'Plex', 'up')] };
+    const after = t.services.status.refresh();
+    release();
+    await inFlight;
+    const view = await after;
+    expect(view.snapshot?.title).toBe('New page');
     expect(t.messenger.inChannel(alertChannel)).toHaveLength(0);
   });
 

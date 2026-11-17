@@ -306,7 +306,7 @@ Bernard can keep one pinned message up to date with whether your services are up
 
 1. In Uptime Kuma, create a status page (for example slug `homelab`) and add the monitors you want in Discord, such as Tower, Plex and Minecraft. Kuma's groups become the embed's sections. Monitors that aren't on the page are never shown.
 2. On the dashboard's **Status** page (or with `/status setup kuma_url slug`), enter Kuma's address as Bernard can reach it, for example `http://192.168.1.10:3001`, and the slug. **Test connection** reads the page without saving anything.
-3. Pick a channel and **Post embed** (or `/status post channel`). Bernard posts the embed, pins it and edits it after every check (default every 60 seconds, 30–3600). If someone deletes the message, it's posted again.
+3. Pick a channel and **Post embed** (or `/status post channel`). Bernard posts the embed, pins it and edits it after every check (default every 60 seconds, 60–3600). If someone deletes the message, it's posted again.
 
 Each line shows the monitor's state (🟢 up, 🔴 down, 🟡 pending, 🔧 maintenance), its response time and its uptime over the last 24 hours. If Kuma can't be reached, the embed keeps the last known state and says since when Kuma has been unreachable, rather than marking everything down.
 
@@ -329,7 +329,7 @@ A role panel is a message with buttons or a dropdown menu that members use to gi
 
 Create panels on the dashboard's **Role panels** page:
 
-- **Style:** _Buttons_ shows one button per role, and clicking it adds or removes that role. _Menu_ shows a dropdown, and members end up with exactly the roles they pick.
+- **Style:** _Buttons_ shows one button per role, and clicking it adds or removes that role. _Menu_ shows a dropdown: picking a role adds it, and picking one you already have removes it.
 - **Mode:** _Any number_ lets members pick as many roles as they like. _Only one_ swaps roles: picking a new one removes the panel's other roles.
 - Each role gets a label, an optional emoji (a Unicode emoji or a custom one like `<:creeper:123456789012345678>`) and an optional description.
 

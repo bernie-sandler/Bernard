@@ -59,7 +59,7 @@ export const statusCommand = defineTree({
           required: true,
           maxLength: 100,
         }),
-        interval: opt.integer({ description: 'Seconds between updates (default 60)', min: 30, max: 3600 }),
+        interval: opt.integer({ description: 'Seconds between updates (default 60)', min: 60, max: 3600 }),
       },
       async execute(ctx, input) {
         const url = input.kuma_url.trim().replace(/\/+$/, '');

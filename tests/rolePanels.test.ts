@@ -78,7 +78,7 @@ describe('posting', () => {
     });
     const edited = t.messenger.inChannel(channel)[0]!.msg;
     expect(edited.buttons).toBeUndefined();
-    expect(edited.select).toMatchObject({ customId: `rp:s:${p.id}`, minValues: 0, maxValues: 1 });
+    expect(edited.select).toMatchObject({ customId: `rp:s:${p.id}`, minValues: 1, maxValues: 1 });
 
     const other = t.guild.addChannel('roles-2');
     await svc().post(ADMIN, p.id, other);
@@ -124,14 +124,39 @@ describe('clicking', () => {
     expect(m.roleIds).not.toContain(games.minecraft);
   });
 
-  it('menus set exactly the selected roles', async () => {
+  it('menus toggle each picked role and leave the rest alone', async () => {
     const p = gamesPanel({ style: 'select' });
     const outside = t.guild.addRole('Unrelated', 2);
     const m = t.guild.addMember({ roleIds: [games.minecraft, outside] });
-    const reply = await svc().handleSelect(m.userId, p.id, [games.valorant, games.rust, outside]);
-    expect(reply).toBe(`Added <@&${games.valorant}>, <@&${games.rust}>. Removed <@&${games.minecraft}>.`);
-    expect(new Set(m.roleIds)).toEqual(new Set([GUILD_ID, outside, games.valorant, games.rust]));
-    expect(await svc().handleSelect(m.userId, p.id, [games.valorant, games.rust])).toMatch(/No changes/);
+    // Picking Valorant must not strip Minecraft (the menu can't show what the member already has).
+    expect(await svc().handleSelect(m.userId, p.id, [games.valorant, outside])).toBe(
+      `Added <@&${games.valorant}>.`,
+    );
+    expect(new Set(m.roleIds)).toEqual(new Set([GUILD_ID, outside, games.minecraft, games.valorant]));
+    expect(await svc().handleSelect(m.userId, p.id, [games.minecraft, games.rust])).toBe(
+      `Added <@&${games.rust}>. Removed <@&${games.minecraft}>.`,
+    );
+    expect(await svc().handleSelect(m.userId, p.id, [])).toBe('Nothing picked.');
+  });
+
+  it('single-mode menus swap like buttons', async () => {
+    const p = gamesPanel({ style: 'select', mode: 'single' });
+    const m = t.guild.addMember({ roleIds: [games.minecraft] });
+    expect(await svc().handleSelect(m.userId, p.id, [games.rust])).toBe(
+      `Added <@&${games.rust}>. Removed <@&${games.minecraft}>.`,
+    );
+  });
+
+  it("handles one member's quick double click in order", async () => {
+    const p = gamesPanel({ mode: 'single' });
+    const m = t.guild.addMember();
+    const [a, b] = await Promise.all([
+      svc().handleButton(m.userId, p.id, games.minecraft),
+      svc().handleButton(m.userId, p.id, games.rust),
+    ]);
+    expect(a).toBe(`Added <@&${games.minecraft}>.`);
+    expect(b).toBe(`Added <@&${games.rust}>. Removed <@&${games.minecraft}>.`);
+    expect(m.roleIds.filter((r) => Object.values(games).includes(r))).toEqual([games.rust]);
   });
 
   it('re-checks roles on every click', async () => {

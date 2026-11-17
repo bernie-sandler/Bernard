@@ -106,7 +106,7 @@ export const settingsSchema = z.object({
         .default(null),
       /** Channel holding the pinned status embed. null = no embed. */
       channelId: channelRef,
-      intervalSeconds: z.number().int().min(30).max(3600).default(60),
+      intervalSeconds: z.number().int().min(60).max(3600).default(60),
       /** Channel for "went down" / "back up" alerts. null = no alerts. */
       alertChannelId: channelRef,
       /** Kuma monitor ID -> role pinged by its alerts. */

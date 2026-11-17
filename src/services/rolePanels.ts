@@ -76,6 +76,9 @@ const list = (ids: string[]) => ids.map(mention).join(', ');
 
 /** Self-assign role panels: a posted message with buttons or a menu that members use to pick roles. */
 export class RolePanelService {
+  /** One member's clicks are handled one at a time, so quick double clicks can't race. */
+  private readonly queues = new Map<string, Promise<unknown>>();
+
   constructor(private readonly d: RolePanelDeps) {}
 
   list(): RolePanel[] {
@@ -246,7 +249,7 @@ export class RolePanelService {
           ? 'Pick one. Picking another swaps it.'
           : panel.style === 'buttons'
             ? 'Click a button to add or remove that role.'
-            : 'Pick as many as you like. Unselect to remove.',
+            : 'Pick roles to add them. Pick a role you have to remove it.',
     };
     if (panel.style === 'buttons') {
       return {
@@ -263,8 +266,8 @@ export class RolePanelService {
       embed,
       select: {
         customId: `rp:s:${panel.id}`,
-        placeholder: panel.mode === 'single' ? 'Choose a role' : 'Choose your roles',
-        minValues: 0,
+        placeholder: panel.mode === 'single' ? 'Choose a role' : 'Choose roles to add or remove',
+        minValues: 1,
         maxValues: panel.mode === 'single' ? 1 : panel.options.length,
         options: panel.options.map((o) => ({
           value: o.roleId,
@@ -282,8 +285,62 @@ export class RolePanelService {
     return m;
   }
 
+  private serial<T>(userId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = this.queues.get(userId) ?? Promise.resolve();
+    const next = prev.catch(() => {}).then(fn);
+    this.queues.set(userId, next);
+    void next
+      .catch(() => {})
+      .finally(() => {
+        if (this.queues.get(userId) === next) this.queues.delete(userId);
+      });
+    return next;
+  }
+
   /** A button click: toggle that role (single mode also removes the panel's other roles). */
-  async handleButton(userId: string, panelId: number, roleId: string): Promise<string> {
+  handleButton(userId: string, panelId: number, roleId: string): Promise<string> {
+    return this.serial(userId, () => this.toggle(userId, panelId, roleId));
+  }
+
+  /**
+   * A menu choice. Each picked role is toggled: added if the member doesn't have it, removed if they
+   * do. (A shared message can't show each member's current roles, so "set exactly these" would
+   * silently strip roles the member already had.) Single-mode menus allow one pick, handled like a
+   * button.
+   */
+  handleSelect(userId: string, panelId: number, values: string[]): Promise<string> {
+    return this.serial(userId, async () => {
+      const panel = this.require(panelId);
+      const offered = new Set(panel.options.map((o) => o.roleId));
+      const picked = [...new Set(values.filter((v) => offered.has(v)))];
+      if (picked.length === 0) return 'Nothing picked.';
+      if (panel.mode === 'single') return this.toggle(userId, panelId, picked[0]!);
+
+      const member = await this.member(userId);
+      const reason = `Role panel "${panel.title}"`;
+      const added: string[] = [];
+      const removed: string[] = [];
+      const blocked: string[] = [];
+      for (const roleId of picked) {
+        if (this.roleProblem(roleId)) {
+          blocked.push(roleId);
+        } else if (member.roleIds.includes(roleId)) {
+          await this.d.mod.removeRole(userId, roleId, reason);
+          removed.push(roleId);
+        } else {
+          await this.d.mod.addRole(userId, roleId, reason);
+          added.push(roleId);
+        }
+      }
+      const parts: string[] = [];
+      if (added.length) parts.push(`Added ${list(added)}.`);
+      if (removed.length) parts.push(`Removed ${list(removed)}.`);
+      if (blocked.length) parts.push(`I can't change ${list(blocked)} right now.`);
+      return parts.join(' ');
+    });
+  }
+
+  private async toggle(userId: string, panelId: number, roleId: string): Promise<string> {
     const panel = this.require(panelId);
     if (!panel.options.some((o) => o.roleId === roleId)) {
       throw new UserError("That role isn't on this panel any more.");
@@ -308,40 +365,5 @@ export class RolePanelService {
       }
     }
     return `Added ${mention(roleId)}.${removed.length ? ` Removed ${list(removed)}.` : ''}`;
-  }
-
-  /** A menu choice: the member ends up with exactly the selected roles from this panel. */
-  async handleSelect(userId: string, panelId: number, values: string[]): Promise<string> {
-    const panel = this.require(panelId);
-    const offered = new Set(panel.options.map((o) => o.roleId));
-    let wanted = values.filter((v) => offered.has(v));
-    if (panel.mode === 'single') wanted = wanted.slice(0, 1);
-    const want = new Set(wanted);
-    const member = await this.member(userId);
-    const reason = `Role panel "${panel.title}"`;
-
-    const added: string[] = [];
-    const removed: string[] = [];
-    const blocked: string[] = [];
-    for (const o of panel.options) {
-      const has = member.roleIds.includes(o.roleId);
-      if (has === want.has(o.roleId)) continue;
-      if (this.roleProblem(o.roleId)) {
-        blocked.push(o.roleId);
-        continue;
-      }
-      if (has) {
-        await this.d.mod.removeRole(userId, o.roleId, reason);
-        removed.push(o.roleId);
-      } else {
-        await this.d.mod.addRole(userId, o.roleId, reason);
-        added.push(o.roleId);
-      }
-    }
-    const parts: string[] = [];
-    if (added.length) parts.push(`Added ${list(added)}.`);
-    if (removed.length) parts.push(`Removed ${list(removed)}.`);
-    if (blocked.length) parts.push(`I can't change ${list(blocked)} right now.`);
-    return parts.join(' ') || 'No changes. You already have those roles.';
   }
 }
