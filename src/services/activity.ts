@@ -70,6 +70,9 @@ const EMPTY_COUNTS: ActivityCounts = {
  */
 export const VOICE_SESSION_GAP_MS = 5 * 60_000;
 
+/** The largest reactionReceiveWindowMinutes the settings allow. */
+const MAX_RECEIVE_WINDOW_MS = 1440 * 60_000;
+
 export function activityPoints(c: ActivityCounts, w: ActivityWeights): ActivityPoints {
   const longMinutes = Math.min(c.voiceLongMinutes, c.voiceMinutes);
   return {
@@ -233,7 +236,7 @@ export class ActivityService {
   private claimReceived(authorId: string, e: ReactionEvent, now: number): boolean {
     const a = this.d.settings.get().activity;
     const windowMs = a.reactionReceiveWindowMinutes * 60_000;
-    this.pruneMessages(now, windowMs);
+    this.pruneMessages(now);
     if (now - e.messageCreatedAt > windowMs || this.inGrace(authorId, now)) return false;
     let entry = this.messageReactors.get(e.messageId);
     if (!entry) {
@@ -257,10 +260,13 @@ export class ActivityService {
     return true;
   }
 
-  /** Forget messages past the receive window: reactions on them can't earn any more. */
-  private pruneMessages(now: number, windowMs: number): void {
+  /**
+   * Forget messages past the longest allowed receive window. Using the maximum rather than the
+   * current setting means widening the window later can't count the same reactor twice.
+   */
+  private pruneMessages(now: number): void {
     for (const [id, m] of this.messageReactors) {
-      if (now - m.createdAt > windowMs) this.messageReactors.delete(id);
+      if (now - m.createdAt > MAX_RECEIVE_WINDOW_MS) this.messageReactors.delete(id);
     }
   }
 

@@ -100,6 +100,19 @@ describe('reactions received', () => {
     expect(t.services.activity.totals('author').reactionsReceived).toBe(0);
   });
 
+  it('still counts each reactor once after the window is shrunk and widened again', () => {
+    expect(react('r1').received).toBe(true);
+    configure((a) => {
+      a.reactionReceiveWindowMinutes = 1;
+    });
+    vi.advanceTimersByTime(2 * MIN);
+    react('r2');
+    configure((a) => {
+      a.reactionReceiveWindowMinutes = 10;
+    });
+    expect(react('r1').received).toBe(false);
+  });
+
   it('gives nothing for reacting to your own message', () => {
     expect(react('author')).toEqual({ given: false, received: false });
     expect(t.services.activity.totals('author').score).toBe(0);

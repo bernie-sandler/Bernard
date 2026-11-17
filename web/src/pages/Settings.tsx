@@ -196,7 +196,7 @@ export function SettingsPage() {
                 </div>
                 <h3 className={SUBHEADING}>Long voice sessions</h3>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Long session after (min)" hint="Continuous voice time">
+                  <Field label="Long session after (min)" hint="Applies from now on">
                     <Input
                       type="number"
                       min={1}

@@ -259,7 +259,7 @@ Members join a **hub** voice channel. The bot then creates a channel for them in
 - **Voice:** `points_per_voice_minute` per minute in voice (default 0.2, so 1 point per 5 minutes; servers set up before this change keep their saved value).
   - AFK-channel time doesn't count, nor does time with no other human in the channel (bots don't count as company).
   - Self-deafened time doesn't count by default. Change this with `count_deafened`.
-  - **Long sessions:** after `voice_long_session_minutes` of continuous voice time (default 120), each further minute is multiplied by `voice_long_session_multiplier` (default 1, no change). Set it below 1 so all-day lounge sitting counts for less, or above 1 to reward long hangouts. A session survives gaps of up to 5 minutes, such as a reconnect.
+  - **Long sessions:** after `voice_long_session_minutes` of continuous voice time (default 120), each further minute is multiplied by `voice_long_session_multiplier` (default 1, no change). Set it below 1 so all-day lounge sitting counts for less, or above 1 to reward long hangouts. A session survives gaps of up to 5 minutes, such as a reconnect. Changing the multiplier re-scores past activity; changing the session length only affects minutes from then on.
   - Session lengths, grace periods and cooldowns are kept in memory, so a restart clears them.
 - **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too. That can move members above or below a tier's activity requirement, so review tier thresholds after changing weights.
 - **History:** daily rows are kept for 400 days, for the dashboard charts.
