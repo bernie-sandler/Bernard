@@ -183,6 +183,12 @@ export const activityDaily = sqliteTable(
     date: text('date').notNull(),
     messagePoints: real('message_points').notNull().default(0),
     voiceMinutes: integer('voice_minutes').notNull().default(0),
+    /** Messages with an image attachment that earned the image bonus. */
+    imageCount: integer('image_count').notNull().default(0),
+    /** Messages with a link that earned the link bonus. */
+    linkCount: integer('link_count').notNull().default(0),
+    /** Reactions added that earned a point. */
+    reactionCount: integer('reaction_count').notNull().default(0),
   },
   (t) => [
     primaryKey({ columns: [t.guildId, t.userId, t.date] }),

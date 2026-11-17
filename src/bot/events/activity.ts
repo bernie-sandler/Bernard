@@ -3,7 +3,12 @@ import { toMemberInfo } from '../../discord/adapters.js';
 import type { Logger } from '../../logger.js';
 import type { Services } from '../../services/container.js';
 
-/** Messages earn activity points; joins/leaves/profile changes keep the members table current. */
+const LINK = /https?:\/\/\S/i;
+
+/**
+ * Messages (with image and link bonuses) and reactions earn activity points; joins/leaves/profile
+ * changes keep the members table current.
+ */
 export function registerActivityEvents(client: Client, services: Services, logger: Logger): void {
   const guildId = services.guild.guildId;
   const safe =
@@ -20,7 +25,21 @@ export function registerActivityEvents(client: Client, services: Services, logge
     Events.MessageCreate,
     safe('activity:messageCreate', (m) => {
       if (m.guildId !== guildId || m.author.bot || m.system || m.webhookId) return;
-      services.activity.recordMessage(m.author.id);
+      services.activity.recordMessage(m.author.id, {
+        image: m.attachments.some((a) => a.contentType?.startsWith('image/') ?? false),
+        link: LINK.test(m.content),
+      });
+    }),
+  );
+
+  client.on(
+    Events.MessageReactionAdd,
+    safe('activity:reactionAdd', async (reaction, user) => {
+      if (reaction.message.guildId !== guildId || user.bot) return;
+      const message = reaction.message.partial ? await reaction.message.fetch() : reaction.message;
+      // Reacting to your own message earns nothing.
+      if (message.author?.id === user.id) return;
+      services.activity.recordReaction(user.id);
     }),
   );
 
