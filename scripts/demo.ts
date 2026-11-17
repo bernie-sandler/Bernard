@@ -210,6 +210,7 @@ for (const id of memberIds) {
       imageCount: Math.floor(rand() * 3 * level),
       linkCount: Math.floor(rand() * 2 * level),
       reactionCount: Math.floor(rand() * 8 * level),
+      reactionsReceivedCount: Math.floor(rand() * 6 * level),
     });
   }
 }

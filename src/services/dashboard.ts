@@ -254,6 +254,8 @@ export class DashboardService {
           images: totals?.images ?? 0,
           links: totals?.links ?? 0,
           reactions: totals?.reactions ?? 0,
+          reactionsReceived: totals?.reactionsReceived ?? 0,
+          voiceLongMinutes: totals?.voiceLongMinutes ?? 0,
           tier: tier ? { name: tier.name, roleId: tier.roleId } : null,
           warnings: showWarnings ? (warnings.get(m.userId) ?? 0) : null,
         };

@@ -189,6 +189,10 @@ export const activityDaily = sqliteTable(
     linkCount: integer('link_count').notNull().default(0),
     /** Reactions added that earned a point. */
     reactionCount: integer('reaction_count').notNull().default(0),
+    /** Voice minutes past the long-session threshold (also counted in voiceMinutes). */
+    voiceLongMinutes: integer('voice_long_minutes').notNull().default(0),
+    /** Reactions from others on this member's messages that earned points. */
+    reactionsReceivedCount: integer('reactions_received_count').notNull().default(0),
   },
   (t) => [
     primaryKey({ columns: [t.guildId, t.userId, t.date] }),

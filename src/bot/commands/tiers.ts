@@ -40,7 +40,7 @@ function tierLine(t: TierRow, members?: number): string {
 }
 
 const weightsLine = (a: Settings['activity']) =>
-  `${a.pointsPerMessage} pt/message · +${a.pointsPerImage} pt/image · +${a.pointsPerLink} pt/link · ${a.pointsPerReaction} pt/reaction · ${a.pointsPerVoiceMinute} pt/voice minute`;
+  `${a.pointsPerMessage} pt/message · +${a.pointsPerImage} pt/image · +${a.pointsPerLink} pt/link · ${a.pointsPerReaction} pt/reaction · ${a.pointsPerReactionReceived} pt/reaction received (within ${a.reactionReceiveWindowMinutes}m) · ${a.pointsPerVoiceMinute} pt/voice minute (×${a.voiceLongSessionMultiplier} after ${a.voiceLongSessionMinutes}m)`;
 
 const actorOf = (ctx: { actor: { userId: string }; source: 'slash' | 'dashboard' }) => ({
   id: ctx.actor.userId,
@@ -352,6 +352,21 @@ export const activityCommand = defineTree({
           min: 0,
           max: 100,
         }),
+        points_per_reaction_received: opt.number({
+          description: 'Points for each member who reacts to your message soon after you post it',
+          min: 0,
+          max: 100,
+        }),
+        voice_long_session_minutes: opt.integer({
+          description: 'Continuous voice minutes before the long-session multiplier applies',
+          min: 1,
+          max: 1440,
+        }),
+        voice_long_session_multiplier: opt.number({
+          description: 'Multiplier for voice minutes past that point (below 1 reduces, above 1 rewards)',
+          min: 0,
+          max: 10,
+        }),
         count_deafened: opt.boolean({ description: 'Count voice time while self-deafened' }),
         window_days: opt.integer({
           description: 'Rolling window for activity scores (days)',
@@ -380,6 +395,12 @@ export const activityCommand = defineTree({
           if (input.points_per_link !== undefined) d.activity.pointsPerLink = input.points_per_link;
           if (input.points_per_reaction !== undefined)
             d.activity.pointsPerReaction = input.points_per_reaction;
+          if (input.points_per_reaction_received !== undefined)
+            d.activity.pointsPerReactionReceived = input.points_per_reaction_received;
+          if (input.voice_long_session_minutes !== undefined)
+            d.activity.voiceLongSessionMinutes = input.voice_long_session_minutes;
+          if (input.voice_long_session_multiplier !== undefined)
+            d.activity.voiceLongSessionMultiplier = input.voice_long_session_multiplier;
           if (input.count_deafened !== undefined) d.activity.countSelfDeafened = input.count_deafened;
           if (input.window_days !== undefined) d.activity.windowDays = input.window_days;
           if (input.reset_tenure_on_rejoin !== undefined)

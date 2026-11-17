@@ -75,8 +75,12 @@ export interface ActivityCounts {
   images: number;
   /** Messages that earned the link bonus. */
   links: number;
-  /** Reactions that earned points. */
+  /** Reactions given that earned points. */
   reactions: number;
+  /** Reactions received from others that earned points. */
+  reactionsReceived: number;
+  /** Voice minutes past the long-session threshold (included in voiceMinutes). */
+  voiceLongMinutes: number;
 }
 
 /** Short summary of the non-zero counts, e.g. "12 msg · 3 img · 40 voice min". */
@@ -86,6 +90,7 @@ export function activitySummary(c: ActivityCounts): string {
     c.images ? `${c.images} img` : null,
     c.links ? `${c.links} link${c.links === 1 ? '' : 's'}` : null,
     c.reactions ? `${c.reactions} react` : null,
+    c.reactionsReceived ? `${c.reactionsReceived} reacts received` : null,
     c.voiceMinutes ? `${c.voiceMinutes} voice min` : null,
   ].filter(Boolean);
   return parts.join(' · ') || 'No activity';
@@ -98,6 +103,7 @@ export interface ActivityPoints {
   images: number;
   links: number;
   reactions: number;
+  reactionsReceived: number;
 }
 
 export interface MemberListItem extends ActivityCounts {

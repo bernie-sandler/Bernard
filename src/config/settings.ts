@@ -63,6 +63,21 @@ export const settingsSchema = z.object({
       pointsPerLink: z.number().min(0).max(100).default(0.5),
       /** Points for adding a reaction to someone else's message. */
       pointsPerReaction: z.number().min(0).max(100).default(0.25),
+      /** Points for each distinct member who reacts to your message soon after it was posted. */
+      pointsPerReactionReceived: z.number().min(0).max(100).default(0.25),
+      /** Only reactions added within this many minutes of the message being posted earn its author points. */
+      reactionReceiveWindowMinutes: z.number().int().min(1).max(1440).default(5),
+      /**
+       * Receiving this many point-earning reactions within reactionGraceWindowMinutes starts a grace
+       * period with no reaction points, given or received. 0 = never.
+       */
+      reactionGraceThreshold: z.number().int().min(0).max(1000).default(20),
+      reactionGraceWindowMinutes: z.number().int().min(1).max(1440).default(60),
+      reactionGraceMinutes: z.number().int().min(1).max(10080).default(360),
+      /** Continuous voice minutes after which voiceLongSessionMultiplier applies. */
+      voiceLongSessionMinutes: z.number().int().min(1).max(1440).default(120),
+      /** Multiplier for voice minutes past voiceLongSessionMinutes; below 1 reduces them, above 1 rewards. */
+      voiceLongSessionMultiplier: z.number().min(0).max(10).default(1),
       countSelfDeafened: z.boolean().default(false),
       windowDays: z.number().int().min(1).max(365).default(30),
     })
