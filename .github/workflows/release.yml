@@ -1,9 +1,10 @@
 name: Release
 
-# Cut a release by bumping "version" in package.json and adding a "## [0.2.0]" section to CHANGELOG.md on main
-# (it becomes the release notes), then pushing a matching tag:
+# Cut a release by bumping "version" in package.json and adding a "## [0.2.0]" section to CHANGELOG.md on dev
+# (it becomes the release notes), merging dev into main, then pushing a matching tag on main:
 #   git tag v0.2.0 && git push origin v0.2.0
-# Tags with a suffix (v0.2.0-rc.1) publish as a prerelease and do not move the "latest" image tag.
+# Tags with a suffix (v0.2.0-rc.1) publish as a prerelease and do not move the "latest" image tag. They may be
+# pushed on dev or main.
 # Older GitHub releases are deleted afterwards (tags are kept): see "Remove superseded releases".
 
 on:
@@ -36,13 +37,19 @@ jobs:
             echo "::error::Tag v$tag does not match package.json version $pkg"
             exit 1
           fi
-      - name: Tagged commit is on main
+      # Stable releases must come from main. Pre-releases (v0.2.0-rc.1) may also come from dev, so an image can
+      # be tested before the release PR into main merges.
+      - name: Tagged commit is on main (or dev for a pre-release)
         run: |
-          git fetch origin main
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
-            echo "::error::Tag $GITHUB_REF_NAME points at a commit that is not on main"
-            exit 1
-          fi
+          allowed="main"
+          case "$GITHUB_REF_NAME" in *-*) allowed="main dev" ;; esac
+          for branch in $allowed; do
+            if git fetch -q origin "$branch" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
+              exit 0
+            fi
+          done
+          echo "::error::Tag $GITHUB_REF_NAME points at a commit that is not on ${allowed// / or }"
+          exit 1
       # Release notes come from CHANGELOG.md, so a stable release needs its section before anything is published.
       # Pre-releases without one fall back to GitHub's generated notes.
       - name: CHANGELOG has a section for this version
