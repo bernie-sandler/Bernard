@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-11-17
+
+### Added
+
+- Images, links and reactions now earn activity points. A message with an image attachment earns an image bonus (default +1) and a message with a link earns a link bonus (default +0.5), on top of the normal message point. Reacting to someone else's message earns points too (default 0.25). The message cooldown applies to each kind separately, so one message can earn the message point and both bonuses. Set the weights on the Settings page or with `/activity settings points_per_image`, `points_per_link` and `points_per_reaction`.
+- The member page shows images, links and reactions, and its activity chart now stacks the points each kind earned per day.
+- The bot uses the `GuildMessageReactions` gateway intent. It isn't privileged, so nothing needs changing in the Developer Portal.
+- A `dev` Docker image (`ghcr.io/bernie-sandler/bernard:dev`) built from the `dev` branch after every change, for trying unreleased changes. It can break between releases; use a version tag or `latest` for your real server.
+
+### Changed
+
+- Release candidates (`X.Y.Z-rc.N` images and GitHub prereleases) are published from `dev` by running the new Prerelease workflow, with no version bump. Pushing an `-rc` tag by hand no longer publishes anything. GitHub keeps at most one release and one release candidate.
+- Old release candidate images, `sha-*` image tags and untagged leftovers of replaced `:dev` builds are deleted from the registry after each release, release candidate and `:dev` build. Version tags, `latest` and `dev` are kept.
+- New installs score voice at 0.2 points per minute (1 point per 5 minutes) instead of 1. Existing servers keep their saved value. Lowering it re-scores past activity, which can move members below a tier's activity requirement, so review your tier thresholds when you change it.
+
+### Removed
+
+- Docker images are no longer tagged `sha-<commit>`. Pin a version tag (`0.1.3`, `0.1`) or `latest` instead.
+
 ## [0.1.3] - 2026-11-16
 
 ### Fixed
@@ -100,7 +119,8 @@ First release. A self-hosted Discord bot and admin dashboard for one private ser
 - Tag-driven releases: pushing `vX.Y.Z` publishes a multi-arch (amd64/arm64) image to GHCR and creates a GitHub release.
 - Weekly grouped Dependabot updates, with patch and minor updates auto-merged once checks pass.
 
-[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/bernie-sandler/bernard/compare/v0.1.0...v0.1.1

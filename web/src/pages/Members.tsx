@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router';
-import type { MemberListResponse, MemberSort } from '../../../src/shared/api.js';
+import { activitySummary, type MemberListResponse, type MemberSort } from '../../../src/shared/api.js';
 import { api, qs } from '../api.js';
 import { PageHeader } from '../components/Layout.js';
 import { Avatar, Badge, Button, Card, cx, EmptyState, ErrorBox, Input, Spinner } from '../components/ui.js';
@@ -158,9 +158,7 @@ export function MembersPage() {
                     <td className="px-3 py-2 text-slate-300">{number(m.tenureDays)} d</td>
                     <td className="px-3 py-2">
                       <div className="font-semibold">{number(m.score)}</div>
-                      <div className="text-xs text-slate-500">
-                        {m.messagePoints} msg · {m.voiceMinutes} min
-                      </div>
+                      <div className="text-xs text-slate-500">{activitySummary(m)}</div>
                     </td>
                     <td className="px-3 py-2">
                       {m.tier ? (

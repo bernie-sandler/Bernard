@@ -23,6 +23,9 @@ type Activity = {
   messageCooldownSeconds: number;
   pointsPerMessage: number;
   pointsPerVoiceMinute: number;
+  pointsPerImage: number;
+  pointsPerLink: number;
+  pointsPerReaction: number;
   countSelfDeafened: boolean;
   windowDays: number;
   resetOnRejoin: boolean;
@@ -100,13 +103,13 @@ export function SettingsPage() {
           <SettingsCard<Activity>
             section="activity"
             title="Activity & tenure"
-            description="Scores are recalculated from stored counts, so changing weights re-scores past activity."
+            description="Scores are recalculated from stored counts, so changing weights re-scores past activity (and can move members across tier thresholds). Image and link points are a bonus on top of the message point. The cooldown applies to messages, images, links and reactions separately."
             extraSections={{ tenure: ['resetOnRejoin'] }}
           >
             {(s, set, disabled) => (
               <>
                 <div className="grid gap-3 sm:grid-cols-3">
-                  <Field label="Message cooldown (s)">
+                  <Field label="Cooldown (s)" hint="Per kind">
                     <Input
                       type="number"
                       min={0}
@@ -136,6 +139,39 @@ export function SettingsPage() {
                       disabled={disabled}
                       value={s.pointsPerVoiceMinute}
                       onChange={(e) => set('pointsPerVoiceMinute', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Bonus per image">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="any"
+                      disabled={disabled}
+                      value={s.pointsPerImage}
+                      onChange={(e) => set('pointsPerImage', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Bonus per link">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="any"
+                      disabled={disabled}
+                      value={s.pointsPerLink}
+                      onChange={(e) => set('pointsPerLink', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Points per reaction">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="any"
+                      disabled={disabled}
+                      value={s.pointsPerReaction}
+                      onChange={(e) => set('pointsPerReaction', Number(e.target.value))}
                     />
                   </Field>
                   <Field label="Rolling window (days)">

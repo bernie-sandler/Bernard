@@ -132,6 +132,9 @@ for (const id of memberIds) {
       date: dateKey(now - d * DAY_MS),
       messagePoints: Math.floor(rand() * 12 * level),
       voiceMinutes: rand() > 0.6 ? Math.floor(rand() * 90 * level) : 0,
+      imageCount: Math.floor(rand() * 3 * level),
+      linkCount: Math.floor(rand() * 2 * level),
+      reactionCount: Math.floor(rand() * 8 * level),
     });
   }
 }

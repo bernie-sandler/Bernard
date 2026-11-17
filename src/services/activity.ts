@@ -2,6 +2,7 @@ import { and, desc, eq, gte, lt, sql, sum } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { activityDaily } from '../db/schema.js';
 import type { VoiceChannelSnapshot } from '../discord/ports.js';
+import type { ActivityCounts, ActivityPoints } from '../shared/api.js';
 import { DAY_MS } from './members.js';
 import type { SettingsService } from './settings.js';
 
@@ -35,11 +36,55 @@ export function eligibleVoiceUsers(
   return out;
 }
 
-export interface ActivityTotals {
-  messagePoints: number;
-  voiceMinutes: number;
+export interface ActivityTotals extends ActivityCounts {
   score: number;
 }
+
+/** Each kind has its own cooldown, so one message can earn the message point and both bonuses. */
+export type ActivityKind = 'message' | 'image' | 'link' | 'reaction';
+
+export interface ActivityWeights {
+  message: number;
+  voice: number;
+  image: number;
+  link: number;
+  reaction: number;
+}
+
+const EMPTY_COUNTS: ActivityCounts = { messagePoints: 0, voiceMinutes: 0, images: 0, links: 0, reactions: 0 };
+
+export function activityPoints(c: ActivityCounts, w: ActivityWeights): ActivityPoints {
+  return {
+    messages: c.messagePoints * w.message,
+    voice: c.voiceMinutes * w.voice,
+    images: c.images * w.image,
+    links: c.links * w.link,
+    reactions: c.reactions * w.reaction,
+  };
+}
+
+export function activityScore(c: ActivityCounts, w: ActivityWeights): number {
+  const p = activityPoints(c, w);
+  return p.messages + p.voice + p.images + p.links + p.reactions;
+}
+
+const sums = {
+  m: sum(activityDaily.messagePoints),
+  v: sum(activityDaily.voiceMinutes),
+  i: sum(activityDaily.imageCount),
+  l: sum(activityDaily.linkCount),
+  r: sum(activityDaily.reactionCount),
+};
+
+type SumRow = { m: string | null; v: string | null; i: string | null; l: string | null; r: string | null };
+
+const toCounts = (row: SumRow | undefined): ActivityCounts => ({
+  messagePoints: Number(row?.m ?? 0),
+  voiceMinutes: Number(row?.v ?? 0),
+  images: Number(row?.i ?? 0),
+  links: Number(row?.l ?? 0),
+  reactions: Number(row?.r ?? 0),
+});
 
 export interface ActivityDeps {
   db: Db;
@@ -53,11 +98,12 @@ export interface ActivityDeps {
 }
 
 /**
- * Activity scoring. Never stores message content: only a per-day count of messages that earned a
- * point (after the cooldown) and voice minutes. Weights are applied when scores are read, so
- * changing them re-scores history.
+ * Activity scoring. Never stores message content: only per-day counts of messages, image and link
+ * bonuses and reactions that earned points (after the cooldown), plus voice minutes. Weights are
+ * applied when scores are read, so changing them re-scores history.
  */
 export class ActivityService {
+  /** Last award time per `kind:userId`. */
   private readonly lastAward = new Map<string, number>();
   private readonly now: () => number;
 
@@ -65,21 +111,63 @@ export class ActivityService {
     this.now = d.now ?? Date.now;
   }
 
-  private weights() {
+  weights(): ActivityWeights {
     const a = this.d.settings.get().activity;
-    return { msg: a.pointsPerMessage, voice: a.pointsPerVoiceMinute, windowDays: a.windowDays };
+    return {
+      message: a.pointsPerMessage,
+      voice: a.pointsPerVoiceMinute,
+      image: a.pointsPerImage,
+      link: a.pointsPerLink,
+      reaction: a.pointsPerReaction,
+    };
   }
 
-  /** A member sent a message. Returns true if it earned a point. */
-  recordMessage(userId: string): boolean {
-    const now = this.now();
+  private windowDays(): number {
+    return this.d.settings.get().activity.windowDays;
+  }
+
+  /** Returns true (and starts the cooldown) if `kind` can earn for this member now. */
+  private claim(kind: ActivityKind, userId: string, now: number): boolean {
     const cooldownMs = this.d.settings.get().activity.messageCooldownSeconds * 1000;
-    const last = this.lastAward.get(userId);
+    const key = `${kind}:${userId}`;
+    const last = this.lastAward.get(key);
     if (last !== undefined && now - last < cooldownMs) return false;
-    this.lastAward.set(userId, now);
-    this.add(userId, dateKey(now), 1, 0);
-    this.checkCrossing(userId, this.weights().msg);
+    this.lastAward.set(key, now);
     return true;
+  }
+
+  /**
+   * A member sent a message. It earns the message point, plus the image and link bonuses when it
+   * has them, each with its own cooldown. Returns the kinds that earned.
+   */
+  recordMessage(userId: string, has: { image?: boolean; link?: boolean } = {}): ActivityKind[] {
+    const now = this.now();
+    const earned: ActivityKind[] = [];
+    if (this.claim('message', userId, now)) earned.push('message');
+    if (has.image && this.claim('image', userId, now)) earned.push('image');
+    if (has.link && this.claim('link', userId, now)) earned.push('link');
+    if (earned.length > 0) {
+      this.award(userId, now, {
+        ...EMPTY_COUNTS,
+        messagePoints: earned.includes('message') ? 1 : 0,
+        images: earned.includes('image') ? 1 : 0,
+        links: earned.includes('link') ? 1 : 0,
+      });
+    }
+    return earned;
+  }
+
+  /** A member reacted to someone else's message. Returns true if it earned points. */
+  recordReaction(userId: string): boolean {
+    const now = this.now();
+    if (!this.claim('reaction', userId, now)) return false;
+    this.award(userId, now, { ...EMPTY_COUNTS, reactions: 1 });
+    return true;
+  }
+
+  private award(userId: string, now: number, counts: ActivityCounts): void {
+    this.add(userId, dateKey(now), counts);
+    this.checkCrossing(userId, activityScore(counts, this.weights()));
   }
 
   /** Award one voice minute to everyone eligible. Run once per minute. Returns who earned it. */
@@ -89,23 +177,36 @@ export class ActivityService {
       countSelfDeafened: this.d.settings.get().activity.countSelfDeafened,
     });
     const day = dateKey(this.now());
-    const delta = this.weights().voice;
+    const counts = { ...EMPTY_COUNTS, voiceMinutes: 1 };
+    const delta = activityScore(counts, this.weights());
     this.d.db.transaction(() => {
-      for (const u of users) this.add(u, day, 0, 1);
+      for (const u of users) this.add(u, day, counts);
     });
     for (const u of users) this.checkCrossing(u, delta);
     return users;
   }
 
-  private add(userId: string, date: string, messages: number, minutes: number): void {
+  private add(userId: string, date: string, c: ActivityCounts): void {
     this.d.db
       .insert(activityDaily)
-      .values({ guildId: this.d.guildId, userId, date, messagePoints: messages, voiceMinutes: minutes })
+      .values({
+        guildId: this.d.guildId,
+        userId,
+        date,
+        messagePoints: c.messagePoints,
+        voiceMinutes: c.voiceMinutes,
+        imageCount: c.images,
+        linkCount: c.links,
+        reactionCount: c.reactions,
+      })
       .onConflictDoUpdate({
         target: [activityDaily.guildId, activityDaily.userId, activityDaily.date],
         set: {
-          messagePoints: sql`${activityDaily.messagePoints} + ${messages}`,
-          voiceMinutes: sql`${activityDaily.voiceMinutes} + ${minutes}`,
+          messagePoints: sql`${activityDaily.messagePoints} + ${c.messagePoints}`,
+          voiceMinutes: sql`${activityDaily.voiceMinutes} + ${c.voiceMinutes}`,
+          imageCount: sql`${activityDaily.imageCount} + ${c.images}`,
+          linkCount: sql`${activityDaily.linkCount} + ${c.links}`,
+          reactionCount: sql`${activityDaily.reactionCount} + ${c.reactions}`,
         },
       })
       .run();
@@ -120,57 +221,50 @@ export class ActivityService {
 
   /** Rolling-window totals for one member. */
   totals(userId: string, now = this.now()): ActivityTotals {
-    const w = this.weights();
     const row = this.d.db
-      .select({ m: sum(activityDaily.messagePoints), v: sum(activityDaily.voiceMinutes) })
+      .select(sums)
       .from(activityDaily)
       .where(
         and(
           eq(activityDaily.guildId, this.d.guildId),
           eq(activityDaily.userId, userId),
-          gte(activityDaily.date, windowStartKey(now, w.windowDays)),
+          gte(activityDaily.date, windowStartKey(now, this.windowDays())),
         ),
       )
       .get();
-    const messagePoints = Number(row?.m ?? 0);
-    const voiceMinutes = Number(row?.v ?? 0);
-    return { messagePoints, voiceMinutes, score: messagePoints * w.msg + voiceMinutes * w.voice };
+    const counts = toCounts(row);
+    return { ...counts, score: activityScore(counts, this.weights()) };
   }
 
   /** Rolling-window totals for everyone with activity, highest score first. */
   allTotals(now = this.now()): (ActivityTotals & { userId: string })[] {
     const w = this.weights();
     const rows = this.d.db
-      .select({
-        userId: activityDaily.userId,
-        m: sum(activityDaily.messagePoints),
-        v: sum(activityDaily.voiceMinutes),
-      })
+      .select({ userId: activityDaily.userId, ...sums })
       .from(activityDaily)
       .where(
         and(
           eq(activityDaily.guildId, this.d.guildId),
-          gte(activityDaily.date, windowStartKey(now, w.windowDays)),
+          gte(activityDaily.date, windowStartKey(now, this.windowDays())),
         ),
       )
       .groupBy(activityDaily.userId)
       .all();
     return rows
       .map((r) => {
-        const messagePoints = Number(r.m ?? 0);
-        const voiceMinutes = Number(r.v ?? 0);
-        return {
-          userId: r.userId,
-          messagePoints,
-          voiceMinutes,
-          score: messagePoints * w.msg + voiceMinutes * w.voice,
-        };
+        const counts = toCounts(r);
+        return { userId: r.userId, ...counts, score: activityScore(counts, w) };
       })
       .sort((a, b) => b.score - a.score);
   }
 
-  /** Daily rows for a member (for charts), oldest first. */
-  history(userId: string, days = 90, now = this.now()) {
+  /** Daily counts and weighted points for a member (for charts), oldest first. */
+  history(
+    userId: string,
+    days = 90,
+    now = this.now(),
+  ): (ActivityCounts & { date: string; points: ActivityPoints })[] {
+    const w = this.weights();
     return this.d.db
       .select()
       .from(activityDaily)
@@ -183,7 +277,17 @@ export class ActivityService {
       )
       .orderBy(desc(activityDaily.date))
       .all()
-      .reverse();
+      .reverse()
+      .map((r) => {
+        const counts: ActivityCounts = {
+          messagePoints: r.messagePoints,
+          voiceMinutes: r.voiceMinutes,
+          images: r.imageCount,
+          links: r.linkCount,
+          reactions: r.reactionCount,
+        };
+        return { date: r.date, ...counts, points: activityPoints(counts, w) };
+      });
   }
 
   prune(now = this.now()): number {

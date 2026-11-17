@@ -137,14 +137,48 @@ afterEach(() => {
 });
 
 describe('ActivityService', () => {
+  const none = { messagePoints: 0, voiceMinutes: 0, images: 0, links: 0, reactions: 0 };
+
   it('awards one point per message with a per-user cooldown', () => {
     const a = t.services.activity;
-    expect(a.recordMessage('u1')).toBe(true);
-    expect(a.recordMessage('u1')).toBe(false);
-    expect(a.recordMessage('u2')).toBe(true);
+    expect(a.recordMessage('u1')).toEqual(['message']);
+    expect(a.recordMessage('u1')).toEqual([]);
+    expect(a.recordMessage('u2')).toEqual(['message']);
     vi.advanceTimersByTime(60_000);
-    expect(a.recordMessage('u1')).toBe(true);
-    expect(a.totals('u1')).toEqual({ messagePoints: 2, voiceMinutes: 0, score: 2 });
+    expect(a.recordMessage('u1')).toEqual(['message']);
+    expect(a.totals('u1')).toEqual({ ...none, messagePoints: 2, score: 2 });
+  });
+
+  it('adds image and link bonuses on top of the message point, each with its own cooldown', () => {
+    const a = t.services.activity;
+    expect(a.recordMessage('u1', { image: true, link: true })).toEqual(['message', 'image', 'link']);
+    // Message and link are cooling down; an image alone still can't earn either.
+    expect(a.recordMessage('u1', { image: true, link: true })).toEqual([]);
+    vi.advanceTimersByTime(30_000);
+    expect(a.recordMessage('u1', { image: true })).toEqual([]);
+    vi.advanceTimersByTime(30_000);
+    expect(a.recordMessage('u1', { link: true })).toEqual(['message', 'link']);
+    expect(a.recordMessage('u1', { image: true })).toEqual(['image']);
+    // Defaults: 1/message, +1/image, +0.5/link.
+    expect(a.totals('u1')).toEqual({ ...none, messagePoints: 2, images: 2, links: 2, score: 5 });
+  });
+
+  it('awards reactions with their own cooldown', () => {
+    const a = t.services.activity;
+    a.recordMessage('u1');
+    expect(a.recordReaction('u1')).toBe(true);
+    expect(a.recordReaction('u1')).toBe(false);
+    vi.advanceTimersByTime(60_000);
+    expect(a.recordReaction('u1')).toBe(true);
+    expect(a.totals('u1')).toEqual({ ...none, messagePoints: 1, reactions: 2, score: 1.5 });
+  });
+
+  it('weights voice minutes at 0.2 points by default', () => {
+    t.db
+      .insert(activityDaily)
+      .values({ guildId: GUILD_ID, userId: 'u1', date: dateKey(NOW.getTime()), voiceMinutes: 60 })
+      .run();
+    expect(t.services.activity.totals('u1').score).toBe(12);
   });
 
   it('applies weights at read time and only counts the rolling window', () => {
@@ -152,7 +186,16 @@ describe('ActivityService', () => {
     t.db
       .insert(activityDaily)
       .values([
-        { guildId: GUILD_ID, userId: 'u1', date: dateKey(NOW.getTime()), messagePoints: 3, voiceMinutes: 10 },
+        {
+          guildId: GUILD_ID,
+          userId: 'u1',
+          date: dateKey(NOW.getTime()),
+          messagePoints: 3,
+          voiceMinutes: 10,
+          imageCount: 2,
+          linkCount: 2,
+          reactionCount: 4,
+        },
         {
           guildId: GUILD_ID,
           userId: 'u1',
@@ -169,13 +212,32 @@ describe('ActivityService', () => {
         },
       ])
       .run();
-    expect(a.totals('u1')).toEqual({ messagePoints: 4, voiceMinutes: 10, score: 14 });
+    // 4×1 + 10×0.2 + 2×1 + 2×0.5 + 4×0.25
+    expect(a.totals('u1')).toEqual({
+      messagePoints: 4,
+      voiceMinutes: 10,
+      images: 2,
+      links: 2,
+      reactions: 4,
+      score: 10,
+    });
     t.services.settings.update(ADMIN, 'test', (s) => {
       s.activity.pointsPerMessage = 2;
       s.activity.pointsPerVoiceMinute = 0.5;
+      s.activity.pointsPerImage = 0;
+      s.activity.pointsPerLink = 1;
+      s.activity.pointsPerReaction = 1;
     });
-    expect(a.totals('u1').score).toBe(13);
-    expect(a.allTotals()[0]).toMatchObject({ userId: 'u1', score: 13 });
+    // 4×2 + 10×0.5 + 0 + 2×1 + 4×1
+    expect(a.totals('u1').score).toBe(19);
+    expect(a.allTotals()[0]).toMatchObject({ userId: 'u1', score: 19 });
+    expect(a.history('u1', 1)).toEqual([
+      expect.objectContaining({
+        date: dateKey(NOW.getTime()),
+        images: 2,
+        points: { messages: 6, voice: 5, images: 0, links: 2, reactions: 4 },
+      }),
+    ]);
   });
 
   it('voice ticks add minutes for eligible members only', () => {
@@ -202,6 +264,16 @@ describe('ActivityService', () => {
     expect(spy).not.toHaveBeenCalled();
     vi.advanceTimersByTime(61_000);
     t.services.activity.recordMessage('u1');
+    expect(spy).toHaveBeenCalledWith('u1');
+  });
+
+  it('queues a tier evaluation when a reaction crosses a threshold', () => {
+    const role = t.guild.addRole('Active', 5);
+    t.services.tiers.add(ADMIN, { name: 'Active', roleId: role, minTenureDays: 0, minActivity: 1.25 });
+    const spy = vi.spyOn(t.services.tiers, 'queueEvaluate');
+    t.services.activity.recordMessage('u1');
+    expect(spy).not.toHaveBeenCalled();
+    t.services.activity.recordReaction('u1');
     expect(spy).toHaveBeenCalledWith('u1');
   });
 

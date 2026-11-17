@@ -321,11 +321,24 @@ describe('data endpoints', () => {
     }
     t.services.members.recordJoin(t.guild.members.get(OWNER_ID)!, new Date());
     const bob = [...t.guild.members.values()].find((m) => m.displayName === 'Bob')!;
-    t.services.activity.recordMessage(bob.userId);
+    t.services.activity.recordMessage(bob.userId, { image: true });
+    t.services.activity.recordReaction(bob.userId);
 
     const all = (await get('/api/members?sort=activity')).json();
     expect(all.total).toBe(4);
-    expect(all.items[0].displayName).toBe('Bob');
+    expect(all.items[0]).toMatchObject({
+      displayName: 'Bob',
+      images: 1,
+      links: 0,
+      reactions: 1,
+      score: 2.25,
+    });
+
+    const detail = (await get(`/api/members/${bob.userId}`)).json();
+    expect(detail.activity).toMatchObject({ messagePoints: 1, images: 1, reactions: 1, score: 2.25 });
+    expect(detail.activity.history).toEqual([
+      expect.objectContaining({ points: { messages: 1, voice: 0, images: 1, links: 0, reactions: 0.25 } }),
+    ]);
     expect(
       (await get('/api/members?search=car')).json().items.map((i: { displayName: string }) => i.displayName),
     ).toEqual(['Carol']);

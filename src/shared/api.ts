@@ -53,7 +53,7 @@ export interface OverviewResponse {
     owner: UserRef | null;
     members: UserRef[];
   }[];
-  topMembers: (UserRef & { score: number; messagePoints: number; voiceMinutes: number })[];
+  topMembers: (UserRef & ActivityCounts & { score: number })[];
   activityWindowDays: number;
   recentCases: CaseDto[];
   canViewCases: boolean;
@@ -67,7 +67,40 @@ export interface OverviewResponse {
   };
 }
 
-export interface MemberListItem {
+/** Activity counts over a period. `messagePoints` counts messages that earned a point. */
+export interface ActivityCounts {
+  messagePoints: number;
+  voiceMinutes: number;
+  /** Messages that earned the image bonus. */
+  images: number;
+  /** Messages that earned the link bonus. */
+  links: number;
+  /** Reactions that earned points. */
+  reactions: number;
+}
+
+/** Short summary of the non-zero counts, e.g. "12 msg · 3 img · 40 voice min". */
+export function activitySummary(c: ActivityCounts): string {
+  const parts = [
+    c.messagePoints ? `${c.messagePoints} msg` : null,
+    c.images ? `${c.images} img` : null,
+    c.links ? `${c.links} link${c.links === 1 ? '' : 's'}` : null,
+    c.reactions ? `${c.reactions} react` : null,
+    c.voiceMinutes ? `${c.voiceMinutes} voice min` : null,
+  ].filter(Boolean);
+  return parts.join(' · ') || 'No activity';
+}
+
+/** Weighted points from each kind of activity (current weights). */
+export interface ActivityPoints {
+  messages: number;
+  voice: number;
+  images: number;
+  links: number;
+  reactions: number;
+}
+
+export interface MemberListItem extends ActivityCounts {
   userId: string;
   displayName: string;
   username: string;
@@ -76,8 +109,6 @@ export interface MemberListItem {
   joinedAt: string;
   tenureDays: number;
   score: number;
-  messagePoints: number;
-  voiceMinutes: number;
   tier: { name: string; roleId: string } | null;
   warnings: number | null;
 }
@@ -116,13 +147,11 @@ export interface MemberDetailResponse {
   tenureDays: number | null;
   timedOutUntil: string | null;
   roles: RoleDto[];
-  activity: {
+  activity: ActivityCounts & {
     windowDays: number;
     score: number;
-    messagePoints: number;
-    voiceMinutes: number;
     rank: number | null;
-    history: { date: string; messagePoints: number; voiceMinutes: number }[];
+    history: (ActivityCounts & { date: string; points: ActivityPoints })[];
   };
   tier: {
     current: { name: string; roleId: string } | null;

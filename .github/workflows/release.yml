@@ -3,9 +3,8 @@ name: Release
 # Cut a release by bumping "version" in package.json and adding a "## [0.2.0]" section to CHANGELOG.md on dev
 # (it becomes the release notes), merging dev into main, then pushing a matching tag on main:
 #   git tag v0.2.0 && git push origin v0.2.0
-# Tags with a suffix (v0.2.0-rc.1) publish as a prerelease and do not move the "latest" image tag. They may be
-# pushed on dev or main.
-# Older GitHub releases are deleted afterwards (tags are kept): see "Remove superseded releases".
+# Release candidates (v0.2.0-rc.1) come from dev through prerelease.yml instead; pushing one by hand fails here.
+# Older GitHub releases and pre-releases are deleted afterwards (tags are kept): see "Remove superseded releases".
 
 on:
   push:
@@ -29,6 +28,12 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Stable version tag
+        run: |
+          if ! [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::$GITHUB_REF_NAME is not a vX.Y.Z tag. Publish release candidates with the Prerelease workflow."
+            exit 1
+          fi
       - name: Tag matches package.json version
         run: |
           tag="${GITHUB_REF_NAME#v}"
@@ -37,24 +42,16 @@ jobs:
             echo "::error::Tag v$tag does not match package.json version $pkg"
             exit 1
           fi
-      # Stable releases must come from main. Pre-releases (v0.2.0-rc.1) may also come from dev, so an image can
-      # be tested before the release PR into main merges.
-      - name: Tagged commit is on main (or dev for a pre-release)
+      - name: Tagged commit is on main
         run: |
-          allowed="main"
-          case "$GITHUB_REF_NAME" in *-*) allowed="main dev" ;; esac
-          for branch in $allowed; do
-            if git fetch -q origin "$branch" 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" "origin/$branch"; then
-              exit 0
-            fi
-          done
-          echo "::error::Tag $GITHUB_REF_NAME points at a commit that is not on ${allowed// / or }"
+          if git fetch -q origin main 2>/dev/null && git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            exit 0
+          fi
+          echo "::error::Tag $GITHUB_REF_NAME points at a commit that is not on main"
           exit 1
-      # Release notes come from CHANGELOG.md, so a stable release needs its section before anything is published.
-      # Pre-releases without one fall back to GitHub's generated notes.
+      # Release notes come from CHANGELOG.md, so the version needs its section before anything is published.
       - name: CHANGELOG has a section for this version
         run: |
-          case "$GITHUB_REF_NAME" in *-*) exit 0 ;; esac
           if ! bash .github/scripts/release-notes.sh "${GITHUB_REF_NAME#v}" > /dev/null; then
             echo "::error::CHANGELOG.md has no \"## [${GITHUB_REF_NAME#v}]\" section to use as release notes"
             exit 1
@@ -85,13 +82,11 @@ jobs:
         uses: docker/metadata-action@v6
         with:
           images: ${{ env.IMAGE }}
-          # latest=auto only tags "latest" for non-prerelease semver tags.
           flavor: latest=auto
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}},enable=${{ !startsWith(github.ref_name, 'v0.') }}
-            type=sha,format=short
       - uses: docker/build-push-action@v7
         with:
           context: .
@@ -120,50 +115,28 @@ jobs:
         run: |
           version="${GITHUB_REF_NAME#v}"
           image="${IMAGE,,}"
-          prerelease=""
-          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
-
           docker_section="$(printf '### Docker image\n\n```\ndocker pull %s:%s\n```\n' "$image" "$version")"
-          if bash .github/scripts/release-notes.sh "$version" > notes.md; then
-            printf '\n%s\n' "$docker_section" >> notes.md
-            notes_args=(--notes-file notes.md)
-          else
-            # Only pre-releases get here: verify fails stable tags that have no CHANGELOG section.
-            notes_args=(--generate-notes --notes "$docker_section")
-          fi
+          bash .github/scripts/release-notes.sh "$version" > notes.md
+          printf '\n%s\n' "$docker_section" >> notes.md
 
           gh release create "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "$GITHUB_REF_NAME" \
-            "${notes_args[@]}" \
-            $prerelease
+            --notes-file notes.md
           printf '%s\n' "$docker_section" >> "$GITHUB_STEP_SUMMARY"
 
-      # Keeps one release (and, while an RC is out, one pre-release). Only releases are deleted: the git
-      # tags stay. A stable release removes every older release and pre-release; a pre-release removes
-      # older pre-releases and leaves the current stable release alone. Drafts and anything newer than
-      # this tag are never touched, so an older tag's run finishing late can't delete a newer release.
+      # Deletes every older release and pre-release (git tags stay), so only this release is listed until the
+      # next release candidate.
       - name: Remove superseded releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          # Semver-ish ordering with GNU sort -V; "-" becomes "~" so 1.0.0-rc.1 sorts before 1.0.0.
-          key() { printf '%s' "${1#v}" | tr '-' '~'; }
-          older() { [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$(key "$1")" "$(key "$2")" | sort -V | head -n1)" = "$(key "$1")" ]; }
+        run: bash .github/scripts/prune-releases.sh "$GITHUB_REF_NAME"
 
-          current="$GITHUB_REF_NAME"
-          current_is_pre=false
-          case "$current" in *-*) current_is_pre=true ;; esac
-
-          gh release list --repo "$GITHUB_REPOSITORY" --limit 1000 \
-            --json tagName,isPrerelease,isDraft \
-            --jq '.[] | select(.isDraft | not) | "\(.tagName) \(.isPrerelease)"' |
-          while read -r tag is_pre; do
-            older "$tag" "$current" || continue
-            if [ "$current_is_pre" = true ] && [ "$is_pre" != true ]; then
-              continue
-            fi
-            echo "Deleting superseded release $tag (tag kept)"
-            gh release delete "$tag" --repo "$GITHUB_REPOSITORY" --yes
-          done
+  cleanup-images:
+    name: Clean up images
+    needs: github-release
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/cleanup-images.yml
