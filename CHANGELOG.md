@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-17
+
 ### Added
 
 - Live status embed fed by Uptime Kuma. Point Bernard at a Kuma status page (the new **Status** dashboard page, or `/status setup`) and it keeps one pinned message up to date with each monitor's state, response time and 24-hour uptime, grouped like the status page. Bernard reads Kuma's public status page API and needs no Kuma login or API key. If Kuma can't be reached, the embed keeps the last known state and says so.
@@ -130,7 +132,8 @@ First release. A self-hosted Discord bot and admin dashboard for one private ser
 - Tag-driven releases: pushing `vX.Y.Z` publishes a multi-arch (amd64/arm64) image to GHCR and creates a GitHub release.
 - Weekly grouped Dependabot updates, with patch and minor updates auto-merged once checks pass.
 
-[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/bernie-sandler/bernard/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/bernie-sandler/bernard/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/bernie-sandler/bernard/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/bernie-sandler/bernard/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/bernie-sandler/bernard/compare/v0.1.1...v0.1.2
