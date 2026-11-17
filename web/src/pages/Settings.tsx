@@ -26,10 +26,19 @@ type Activity = {
   pointsPerImage: number;
   pointsPerLink: number;
   pointsPerReaction: number;
+  pointsPerReactionReceived: number;
+  reactionReceiveWindowMinutes: number;
+  reactionGraceThreshold: number;
+  reactionGraceWindowMinutes: number;
+  reactionGraceMinutes: number;
+  voiceLongSessionMinutes: number;
+  voiceLongSessionMultiplier: number;
   countSelfDeafened: boolean;
   windowDays: number;
   resetOnRejoin: boolean;
 };
+
+const SUBHEADING = 'text-xs font-semibold tracking-wide text-slate-500 uppercase';
 
 export function SettingsPage() {
   const settings = useSettings();
@@ -103,7 +112,7 @@ export function SettingsPage() {
           <SettingsCard<Activity>
             section="activity"
             title="Activity & tenure"
-            description="Scores are recalculated from stored counts, so changing weights re-scores past activity (and can move members across tier thresholds). Image and link points are a bonus on top of the message point. The cooldown applies to messages, images, links and reactions separately."
+            description="Scores are recalculated from stored counts, so changing weights re-scores past activity (and can move members across tier thresholds). Image and link points are a bonus on top of the message point. The cooldown applies to messages, images, links and reactions given separately. A member who receives the grace number of reactions within the set time earns no reaction points, given or received, for the grace length."
             extraSections={{ tenure: ['resetOnRejoin'] }}
           >
             {(s, set, disabled) => (
@@ -182,6 +191,84 @@ export function SettingsPage() {
                       disabled={disabled}
                       value={s.windowDays}
                       onChange={(e) => set('windowDays', Number(e.target.value))}
+                    />
+                  </Field>
+                </div>
+                <h3 className={SUBHEADING}>Long voice sessions</h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Long session after (min)" hint="Continuous voice time">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      disabled={disabled}
+                      value={s.voiceLongSessionMinutes}
+                      onChange={(e) => set('voiceLongSessionMinutes', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Multiplier after that" hint="<1 reduces, >1 rewards">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={10}
+                      step="any"
+                      disabled={disabled}
+                      value={s.voiceLongSessionMultiplier}
+                      onChange={(e) => set('voiceLongSessionMultiplier', Number(e.target.value))}
+                    />
+                  </Field>
+                </div>
+                <h3 className={SUBHEADING}>Reactions received</h3>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <Field label="Points per reactor" hint="Each member once per message">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={100}
+                      step="any"
+                      disabled={disabled}
+                      value={s.pointsPerReactionReceived}
+                      onChange={(e) => set('pointsPerReactionReceived', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Within (min) of posting">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      disabled={disabled}
+                      value={s.reactionReceiveWindowMinutes}
+                      onChange={(e) => set('reactionReceiveWindowMinutes', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Grace after (reactions)" hint="0 = never">
+                    <Input
+                      type="number"
+                      min={0}
+                      max={1000}
+                      disabled={disabled}
+                      value={s.reactionGraceThreshold}
+                      onChange={(e) => set('reactionGraceThreshold', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Received within (min)">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={1440}
+                      disabled={disabled}
+                      value={s.reactionGraceWindowMinutes}
+                      onChange={(e) => set('reactionGraceWindowMinutes', Number(e.target.value))}
+                    />
+                  </Field>
+                  <Field label="Grace length (min)" hint="No reaction points">
+                    <Input
+                      type="number"
+                      min={1}
+                      max={10080}
+                      disabled={disabled}
+                      value={s.reactionGraceMinutes}
+                      onChange={(e) => set('reactionGraceMinutes', Number(e.target.value))}
                     />
                   </Field>
                 </div>
