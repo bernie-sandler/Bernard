@@ -36,7 +36,7 @@ A self-hosted Discord bot plus admin dashboard for **one private server**. Bot, 
 - **Tenure and activity tiers:** up to 10 tiers that need both days in the server and recent activity, with stacking or highest-only modes and step-by-step demotion down to a floor.
 - **Status embed:** a pinned message showing your Uptime Kuma monitors, with up/down alerts and ping roles.
 - **Self-assign role panels:** buttons or a menu members use to pick their own roles.
-- **Issue reports:** members report problems from Discord, Bernard opens a [Belltower](https://github.com/bernie-sandler/Belltower) ticket and tells them when it's fixed.
+- **Issue reports:** members report problems from Discord, Bernard opens a [Belltower](https://github.com/bernie-sandler/Belltower) ticket and tells them when it's fixed. Or the button opens Belltower's submit page, and the dashboard lists what comes in.
 - **Web dashboard:** Discord login, gated by the same permission nodes as the commands, with live updates. Everything configurable by command is configurable here too.
 
 ## Quick start
