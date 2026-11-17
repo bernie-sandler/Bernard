@@ -1,4 +1,5 @@
 import type { ResultEmbed } from '../shared/commandResult.js';
+import type { OutgoingMessage } from '../shared/messages.js';
 
 /**
  * Narrow interfaces the services depend on instead of raw discord.js objects. Production uses the
@@ -38,6 +39,8 @@ export interface RoleInfo {
   position: number;
   managed: boolean;
   color: number;
+  /** Grants a moderation or admin permission (Administrator, Manage Roles, Ban Members, ...). */
+  elevated: boolean;
 }
 
 export type ChannelKindName =
@@ -133,6 +136,14 @@ export interface ModerationPort {
 export interface MessengerPort {
   /** Send an embed to a channel. Returns the message ID, or null if it could not be sent. */
   sendEmbed(channelId: string, embed: ResultEmbed): Promise<string | null>;
+  /** Send a message. Returns its ID, or null if the channel is missing or not sendable. */
+  send(channelId: string, msg: OutgoingMessage): Promise<string | null>;
+  /** Replace a message the bot sent. Returns false when the message or channel no longer exists. */
+  edit(channelId: string, messageId: string, msg: OutgoingMessage): Promise<boolean>;
+  /** Pin a message. Returns false when it could not be pinned (missing permission, pin limit). */
+  pin(channelId: string, messageId: string): Promise<boolean>;
+  /** Delete a message, ignoring messages that are already gone. */
+  delete(channelId: string, messageId: string): Promise<void>;
 }
 
 export interface BotInfoPort {

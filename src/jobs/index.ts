@@ -24,6 +24,11 @@ export function startJobs(services: Services, logger: Logger): Scheduler {
   // the interval apply without a restart).
   scheduler.add('tier-sync', '* * * * *', () => services.tiers.maybeScheduledSync());
 
+  // Refresh the Uptime Kuma status embed whenever its interval has passed.
+  scheduler.add('status-refresh', '* * * * *', () => services.status.maybeScheduledRefresh(), {
+    runOnStart: true,
+  });
+
   // Drop daily activity rows older than the history kept for charts.
   scheduler.add('activity-retention', '45 3 * * *', () => services.activity.prune(), { runOnStart: true });
 

@@ -14,8 +14,11 @@ import { MemberService } from './members.js';
 import { MessageCache } from './messageCache.js';
 import { ModerationService } from './moderation/service.js';
 import { PermissionService } from './permissions/service.js';
+import { RolePanelService } from './rolePanels.js';
 import { SessionService } from './sessions.js';
 import { SettingsService } from './settings.js';
+import { HttpKumaClient, type KumaClient } from './status/kuma.js';
+import { StatusService } from './status/service.js';
 import { TierService } from './tiers.js';
 import { VoiceService } from './voice.js';
 
@@ -37,6 +40,8 @@ export interface Services {
   members: MemberService;
   activity: ActivityService;
   tiers: TierService;
+  status: StatusService;
+  rolePanels: RolePanelService;
   state: BotStateStore;
   sessions: SessionService;
   live: LiveEvents;
@@ -52,6 +57,8 @@ export interface ContainerDeps {
   voice: VoicePort;
   bot: BotInfoPort;
   commands: CommandDefinition[];
+  /** Uptime Kuma client (default: real HTTP). */
+  kuma?: KumaClient;
   /** Dashboard session lifetime (default 7 days). */
   sessionTtlMs?: number;
 }
@@ -112,6 +119,25 @@ export function createContainer(deps: ContainerDeps): Container {
     live,
   });
 
+  const status = new StatusService({
+    guild,
+    messenger: deps.messenger,
+    kuma: deps.kuma ?? new HttpKumaClient(),
+    settings,
+    state,
+    logger,
+    live,
+  });
+  const rolePanels = new RolePanelService({
+    db,
+    guildId,
+    guild,
+    mod: deps.mod,
+    messenger: deps.messenger,
+    audit,
+    logger,
+  });
+
   const services: Services = {
     db,
     logger,
@@ -129,6 +155,8 @@ export function createContainer(deps: ContainerDeps): Container {
     members,
     activity,
     tiers,
+    status,
+    rolePanels,
     state,
     sessions,
     live,

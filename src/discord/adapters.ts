@@ -1,14 +1,21 @@
 import {
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
   type Channel,
   ChannelType,
   type Client,
   EmbedBuilder,
   type Guild,
   type GuildMember,
+  type MessageActionRowComponentBuilder,
   PermissionFlagsBits,
   type PermissionsString,
+  type Role,
+  StringSelectMenuBuilder,
 } from 'discord.js';
 import type { ResultEmbed } from '../shared/commandResult.js';
+import type { OutgoingMessage } from '../shared/messages.js';
 import type {
   BotInfoPort,
   ChannelInfo,
@@ -86,6 +93,94 @@ export function toEmbed(e: ResultEmbed): EmbedBuilder {
 }
 
 /** Shared lazy guild lookup so adapters can be built before the client is ready. */
+/** Permissions that make a role unsafe to hand out from a self-assign panel. */
+const ELEVATED_PERMISSIONS = [
+  PermissionFlagsBits.Administrator,
+  PermissionFlagsBits.ManageGuild,
+  PermissionFlagsBits.ManageRoles,
+  PermissionFlagsBits.ManageChannels,
+  PermissionFlagsBits.ManageMessages,
+  PermissionFlagsBits.ManageWebhooks,
+  PermissionFlagsBits.ManageNicknames,
+  PermissionFlagsBits.ManageGuildExpressions,
+  PermissionFlagsBits.ManageEvents,
+  PermissionFlagsBits.ManageThreads,
+  PermissionFlagsBits.BanMembers,
+  PermissionFlagsBits.KickMembers,
+  PermissionFlagsBits.ModerateMembers,
+  PermissionFlagsBits.MoveMembers,
+  PermissionFlagsBits.MuteMembers,
+  PermissionFlagsBits.DeafenMembers,
+  PermissionFlagsBits.MentionEveryone,
+  PermissionFlagsBits.ViewAuditLog,
+];
+
+export function toRoleInfo(r: Role): RoleInfo {
+  return {
+    id: r.id,
+    name: r.name,
+    position: r.position,
+    managed: r.managed,
+    color: r.color,
+    elevated: r.permissions.any(ELEVATED_PERMISSIONS, false),
+  };
+}
+
+const BUTTON_STYLES = {
+  primary: ButtonStyle.Primary,
+  secondary: ButtonStyle.Secondary,
+  success: ButtonStyle.Success,
+  danger: ButtonStyle.Danger,
+} as const;
+
+/** Build the discord.js payload for an OutgoingMessage (used for both send and edit). */
+export function toMessagePayload(msg: OutgoingMessage) {
+  const rows: ActionRowBuilder<MessageActionRowComponentBuilder>[] = [];
+  const buttons = (msg.buttons ?? []).slice(0, 25);
+  for (let i = 0; i < buttons.length; i += 5) {
+    rows.push(
+      new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(
+        buttons.slice(i, i + 5).map((b) => {
+          const btn = new ButtonBuilder()
+            .setCustomId(b.customId)
+            .setLabel(b.label.slice(0, 80))
+            .setStyle(BUTTON_STYLES[b.style ?? 'secondary']);
+          if (b.emoji) btn.setEmoji(b.emoji);
+          return btn;
+        }),
+      ),
+    );
+  }
+  if (msg.select && msg.select.options.length > 0) {
+    const sel = msg.select;
+    const menu = new StringSelectMenuBuilder()
+      .setCustomId(sel.customId)
+      .setMinValues(sel.minValues)
+      .setMaxValues(Math.min(sel.maxValues, sel.options.length))
+      .addOptions(
+        sel.options.slice(0, 25).map((o) => ({
+          value: o.value,
+          label: o.label.slice(0, 100),
+          ...(o.description ? { description: o.description.slice(0, 100) } : {}),
+          ...(o.emoji ? { emoji: o.emoji } : {}),
+        })),
+      );
+    if (sel.placeholder) menu.setPlaceholder(sel.placeholder.slice(0, 150));
+    rows.push(new ActionRowBuilder<MessageActionRowComponentBuilder>().addComponents(menu));
+  }
+  return {
+    content: msg.content ? msg.content.slice(0, 2000) : null,
+    embeds: msg.embed ? [toEmbed(msg.embed)] : [],
+    components: rows,
+    allowedMentions: { parse: [], roles: msg.mentionRoleIds ?? [] },
+  };
+}
+
+/** Discord error codes meaning the channel or message is gone. */
+const GONE_CODES = new Set([10003, 10008]);
+const isGone = (err: unknown) =>
+  typeof err === 'object' && err !== null && GONE_CODES.has((err as { code?: number }).code ?? 0);
+
 abstract class GuildBound {
   constructor(
     protected readonly client: Client,
@@ -154,7 +249,7 @@ export class DiscordGuildPort extends GuildBound implements GuildPort {
   getRole(roleId: string): RoleInfo | null {
     const r = this.guild().roles.cache.get(roleId);
     if (!r) return null;
-    return { id: r.id, name: r.name, position: r.position, managed: r.managed, color: r.color };
+    return toRoleInfo(r);
   }
 
   listChannels(): ChannelInfo[] {
@@ -203,7 +298,7 @@ export class DiscordGuildPort extends GuildBound implements GuildPort {
     return [...this.guild().roles.cache.values()]
       .filter((r) => r.id !== this.guildId)
       .sort((a, b) => b.position - a.position)
-      .map((r) => ({ id: r.id, name: r.name, position: r.position, managed: r.managed, color: r.color }));
+      .map(toRoleInfo);
   }
 
   private countsCache: { at: number; value: { members: number; online: number } } | null = null;
@@ -372,6 +467,53 @@ export class DiscordMessenger implements MessengerPort {
     if (!channel || !channel.isSendable()) return null;
     const msg = await channel.send({ embeds: [toEmbed(embed)], allowedMentions: { parse: [] } });
     return msg.id;
+  }
+
+  private async sendable(channelId: string) {
+    const channel = await this.client.channels.fetch(channelId).catch((err) => {
+      if (isGone(err)) return null;
+      throw err;
+    });
+    return channel?.isSendable() ? channel : null;
+  }
+
+  async send(channelId: string, msg: OutgoingMessage): Promise<string | null> {
+    const channel = await this.sendable(channelId);
+    if (!channel) return null;
+    const { content, ...rest } = toMessagePayload(msg);
+    const sent = await channel.send({ ...rest, ...(content ? { content } : {}) });
+    return sent.id;
+  }
+
+  async edit(channelId: string, messageId: string, msg: OutgoingMessage): Promise<boolean> {
+    const channel = await this.sendable(channelId);
+    if (!channel) return false;
+    try {
+      await channel.messages.edit(messageId, toMessagePayload(msg));
+      return true;
+    } catch (err) {
+      if (isGone(err)) return false;
+      throw err;
+    }
+  }
+
+  async pin(channelId: string, messageId: string): Promise<boolean> {
+    try {
+      const channel = await this.sendable(channelId);
+      if (!channel) return false;
+      await channel.messages.pin(messageId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async delete(channelId: string, messageId: string): Promise<void> {
+    const channel = await this.sendable(channelId);
+    if (!channel) return;
+    await channel.messages.delete(messageId).catch((err) => {
+      if (!isGone(err)) throw err;
+    });
   }
 }
 

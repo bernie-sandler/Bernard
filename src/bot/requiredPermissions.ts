@@ -7,6 +7,7 @@ export const REQUIRED_PERMISSIONS = [
   ['EmbedLinks', PermissionFlagsBits.EmbedLinks, 'Log entries and replies are embeds'],
   ['ReadMessageHistory', PermissionFlagsBits.ReadMessageHistory, 'Purge needs to fetch recent messages'],
   ['ManageMessages', PermissionFlagsBits.ManageMessages, 'Purge / bulk delete'],
+  ['PinMessages', PermissionFlagsBits.PinMessages, 'Pin the status embed'],
   ['ManageChannels', PermissionFlagsBits.ManageChannels, 'Slowmode, lock/unlock, temp voice channels'],
   [
     'ManageRoles',
