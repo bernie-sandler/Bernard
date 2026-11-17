@@ -249,14 +249,18 @@ Members join a **hub** voice channel. The bot then creates a channel for them in
 
 ### Activity
 
-- **No message content is stored.** The score is built from counts kept per member per day: messages, image and link bonuses and reactions that earned points, and voice minutes.
-- **Cooldown:** each kind (message, image, link, reaction) earns at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points. The kinds cool down separately.
+- **No message content is stored.** The score is built from counts kept per member per day: messages, image and link bonuses, reactions given and received that earned points, and voice minutes.
+- **Cooldown:** each kind (message, image, link, reaction given) earns at most once per `message_cooldown` seconds (default 60) per member, so spamming doesn't farm points. The kinds cool down separately.
 - **Messages:** `points_per_message` per message (default 1).
 - **Images and links:** a message with an image attachment earns `points_per_image` (default 1) and a message with a link earns `points_per_link` (default 0.5), on top of the message point.
 - **Reactions:** adding a reaction to someone else's message earns `points_per_reaction` (default 0.25). Removing it doesn't take points away, and reacting to your own message earns nothing.
+- **Reactions received:** when someone reacts to your message within a few minutes of you posting it (default 5), you earn `points_per_reaction_received` (default 0.25). Each member counts once per message, however many emojis they add. Bot and webhook messages earn nothing.
+  - **Grace period:** a member who receives a set number of point-earning reactions within a set time (default 20 within 60 minutes) earns no reaction points at all, given or received, for the grace length (default 6 hours). A threshold of 0 turns this off. The receive window and grace settings are on the dashboard Settings page.
 - **Voice:** `points_per_voice_minute` per minute in voice (default 0.2, so 1 point per 5 minutes; servers set up before this change keep their saved value).
   - AFK-channel time doesn't count, nor does time with no other human in the channel (bots don't count as company).
   - Self-deafened time doesn't count by default. Change this with `count_deafened`.
+  - **Long sessions:** after `voice_long_session_minutes` of continuous voice time (default 120), each further minute is multiplied by `voice_long_session_multiplier` (default 1, no change). Set it below 1 so all-day lounge sitting counts for less, or above 1 to reward long hangouts. A session survives gaps of up to 5 minutes, such as a reconnect. Changing the multiplier re-scores past activity; changing the session length only affects minutes from then on.
+  - Session lengths, grace periods and cooldowns are kept in memory, so a restart clears them.
 - **Rolling window:** the score used for tiers covers the last `window_days` (default 30). Weights are applied when scores are read, so changing them re-scores past activity too. That can move members above or below a tier's activity requirement, so review tier thresholds after changing weights.
 - **History:** daily rows are kept for 400 days, for the dashboard charts.
 

@@ -34,7 +34,8 @@ const ACTIVITY_SERIES: { key: keyof ActivityPoints; name: string; color: string 
   { key: 'messages', name: 'Messages', color: '#818cf8' },
   { key: 'images', name: 'Images', color: '#fbbf24' },
   { key: 'links', name: 'Links', color: '#38bdf8' },
-  { key: 'reactions', name: 'Reactions', color: '#f472b6' },
+  { key: 'reactions', name: 'Reactions given', color: '#f472b6' },
+  { key: 'reactionsReceived', name: 'Reactions received', color: '#c084fc' },
   { key: 'voice', name: 'Voice', color: '#34d399' },
 ];
 
@@ -247,13 +248,14 @@ export function MemberDetailPage() {
           </span>
         }
       >
-        <div className="mb-4 grid grid-cols-3 gap-3 text-center sm:grid-cols-6">
+        <div className="mb-4 grid grid-cols-4 gap-3 text-center sm:grid-cols-7">
           {[
             { value: m.activity.score, label: 'points' },
             { value: m.activity.messagePoints, label: 'counted messages' },
             { value: m.activity.images, label: 'images' },
             { value: m.activity.links, label: 'links' },
-            { value: m.activity.reactions, label: 'reactions' },
+            { value: m.activity.reactions, label: 'reactions given' },
+            { value: m.activity.reactionsReceived, label: 'reactions received' },
             { value: m.activity.voiceMinutes, label: 'voice minutes' },
           ].map((s) => (
             <div key={s.label}>
