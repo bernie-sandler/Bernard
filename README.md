@@ -11,8 +11,8 @@
 
 <p align="center">
   <img alt="Project status: In Development" src="https://img.shields.io/badge/status-In%20Development-3178C6">
-  <img alt="Latest stable release" src="https://img.shields.io/github/v/release/bernie-sandler/Bernard?label=stable&color=green">
-  <img alt="Latest pre-release" src="https://img.shields.io/github/v/release/bernie-sandler/Bernard?include_prereleases&label=dev&color=orange">
+  <img alt="Latest stable release" src="https://img.shields.io/github/v/release/bernie-sandler/Bernard?label=stable&color=green&sort=semver">
+  <img alt="Latest pre-release" src="https://img.shields.io/github/v/release/bernie-sandler/Bernard?include_prereleases&label=dev&color=orange&sort=semver">
 </p>
 
 <p align="center">
