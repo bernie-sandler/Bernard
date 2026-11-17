@@ -455,6 +455,8 @@ To release ([`release.yml`](.github/workflows/release.yml)):
 
 The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release whose notes are the version's `CHANGELOG.md` section. A tag with a suffix, like `v0.2.0-rc.1`, becomes a prerelease and leaves `latest` alone. Prerelease tags may also be pushed on `dev`, to try an image before the release reaches `main`.
 
+Every push to `dev` also publishes `ghcr.io/bernie-sandler/bernard:dev` ([`dev-image.yml`](.github/workflows/dev-image.yml)), so a test container can follow unreleased changes without a version bump or tag. It is rebuilt and overwritten on each push, isn't a GitHub release, and can break between releases, so keep production on a version tag or `latest`. To rebuild it by hand, run the workflow from the Actions tab.
+
 An urgent fix for a released version can skip `dev`: branch from `main`, merge the fix (with its version bump and changelog section) into `main` and tag it, then merge `main` back into `dev` with a merge commit.
 
 Only the newest release is kept on GitHub. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags and Docker image tags are never removed, so any version can still be checked out or pulled.
