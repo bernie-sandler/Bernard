@@ -429,14 +429,17 @@ pnpm test:coverage
 
 ## CI and releases
 
-GitHub Actions run on every pull request to `main` and every push to `main` ([`ci.yml`](.github/workflows/ci.yml)): Biome lint, typecheck, tests with coverage on Node 22 and 26, the production build, and a Docker image build. A final **CI passed** job sums them up. Mark it as the required status check in the `main` branch protection rule so pull requests can only merge when everything is green.
+Work happens on two long-lived branches. `dev` collects finished changes: feature and fix branches start from it and are squash-merged back into it. `main` holds released code and is the default branch. A release merges `dev` into `main` with a merge commit (not a squash, which would make the two branches' histories drift apart).
 
-[Dependabot](.github/dependabot.yml) opens weekly PRs (Mondays) for pnpm packages, GitHub Actions and the Docker base image, with minor and patch bumps grouped into one PR per category. [`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) queues patch and minor PRs to squash-merge once **CI passed** is green, and comments on major updates so you review them by hand. Auto-merge needs **Settings → General → Allow auto-merge** turned on.
+GitHub Actions run on every pull request to, and every push to, `main` and `dev` ([`ci.yml`](.github/workflows/ci.yml)): Biome lint, typecheck, tests with coverage on Node 22 and 26, the production build, and a Docker image build. A final **CI passed** job sums them up. Mark it as the required status check in the branch protection rules for both `main` and `dev` so pull requests can only merge when everything is green.
+
+[Dependabot](.github/dependabot.yml) opens weekly PRs (Mondays) against `dev` for pnpm packages, GitHub Actions and the Docker base image, with minor and patch bumps grouped into one PR per category. [`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) queues patch and minor PRs to squash-merge once **CI passed** is green, and comments on major updates so you review them by hand. Auto-merge needs **Settings → General → Allow auto-merge** turned on.
 
 To release ([`release.yml`](.github/workflows/release.yml)):
 
-1. Bump `version` in `package.json` and merge it to `main`.
-2. Tag that commit and push the tag:
+1. On `dev`, bump `version` in `package.json` and move the `[Unreleased]` entries in `CHANGELOG.md` into a `## [0.2.0] - YYYY-MM-DD` section.
+2. Open a pull request from `dev` into `main` and merge it with **Create a merge commit**.
+3. Tag the merge commit on `main` and push the tag:
 
    ```bash
    git tag v0.2.0
@@ -446,7 +449,9 @@ To release ([`release.yml`](.github/workflows/release.yml)):
    git push origin v0.2.0
    ```
 
-The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release with generated notes. A tag with a suffix, like `v0.2.0-rc.1`, becomes a prerelease and leaves `latest` alone.
+The release workflow checks that the tag matches `package.json` and is on `main`, runs the full CI suite again, publishes a multi-arch (amd64/arm64) image to `ghcr.io/bernie-sandler/bernard` tagged with the version, `major.minor` and `latest`, and creates a GitHub release whose notes are the version's `CHANGELOG.md` section. A tag with a suffix, like `v0.2.0-rc.1`, becomes a prerelease and leaves `latest` alone. Prerelease tags may also be pushed on `dev`, to try an image before the release reaches `main`.
+
+An urgent fix for a released version can skip `dev`: branch from `main`, merge the fix (with its version bump and changelog section) into `main` and tag it, then merge `main` back into `dev` with a merge commit.
 
 Only the newest release is kept on GitHub. Publishing a release deletes every older release and release candidate. Publishing a release candidate deletes older candidates but keeps the current release. Git tags and Docker image tags are never removed, so any version can still be checked out or pulled.
 

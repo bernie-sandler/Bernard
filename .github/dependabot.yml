@@ -1,9 +1,12 @@
 version: 2
 
+# Every update targets dev, so dependency bumps reach users through a release like any other change.
+
 updates:
   # pnpm dependencies (Dependabot reads pnpm-lock.yaml through the npm ecosystem).
   - package-ecosystem: npm
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -23,6 +26,7 @@ updates:
 
   - package-ecosystem: github-actions
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday
@@ -35,6 +39,7 @@ updates:
   # Base image in the Dockerfile (node:26-slim).
   - package-ecosystem: docker
     directory: /
+    target-branch: dev
     schedule:
       interval: weekly
       day: monday

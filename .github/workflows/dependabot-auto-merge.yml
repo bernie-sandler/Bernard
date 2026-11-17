@@ -2,7 +2,8 @@ name: Dependabot auto-merge
 
 # Queues non-breaking (patch/minor) Dependabot PRs to squash-merge once every required check passes.
 # Major updates are left open for review. Needs "Allow auto-merge" turned on in the repository
-# settings and "CI passed" set as a required check on main; without those this job just labels the PR.
+# settings and "CI passed" set as a required check on dev (Dependabot targets dev); without those this
+# job just labels the PR.
 
 on: pull_request
 

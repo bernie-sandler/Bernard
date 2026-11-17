@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, dev]
   push:
-    branches: [main]
+    branches: [main, dev]
   workflow_call:
   workflow_dispatch:
 
@@ -98,7 +98,7 @@ jobs:
       - name: Smoke test entrypoint
         run: docker run --rm --entrypoint sh bernard:ci -c 'test -f dist/src/index.js && node --version'
 
-  # Single required check for branch protection: mark "CI passed" as required on main.
+  # Single required check for branch protection: mark "CI passed" as required on main and dev.
   ci-passed:
     name: CI passed
     if: always()
