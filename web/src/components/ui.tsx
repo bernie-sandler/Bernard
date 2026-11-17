@@ -212,11 +212,14 @@ export function Modal({
   title,
   onClose,
   children,
+  wide,
 }: {
   open: boolean;
   title: string;
   onClose: () => void;
   children: ReactNode;
+  /** Room for larger forms. */
+  wide?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -233,7 +236,10 @@ export function Modal({
       onClick={(e) => {
         if (e.target === ref.current) onClose();
       }}
-      className="m-auto w-[calc(100%-2rem)] max-w-md rounded-xl border border-slate-700 bg-slate-900 p-0 text-slate-200 shadow-2xl backdrop:bg-black/60"
+      className={cx(
+        'm-auto w-[calc(100%-2rem)] rounded-xl border border-slate-700 bg-slate-900 p-0 text-slate-200 shadow-2xl backdrop:bg-black/60',
+        wide ? 'max-w-2xl' : 'max-w-md',
+      )}
     >
       {open && (
         <div className="p-5">
