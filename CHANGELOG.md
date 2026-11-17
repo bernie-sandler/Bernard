@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Images, links and reactions now earn activity points. A message with an image attachment earns an image bonus (default +1) and a message with a link earns a link bonus (default +0.5), on top of the normal message point. Reacting to someone else's message earns points too (default 0.25). The message cooldown applies to each kind separately, so one message can earn the message point and both bonuses. Set the weights on the Settings page or with `/activity settings points_per_image`, `points_per_link` and `points_per_reaction`.
 - The member page shows images, links and reactions, and its activity chart now stacks the points each kind earned per day.
 - The bot uses the `GuildMessageReactions` gateway intent. It isn't privileged, so nothing needs changing in the Developer Portal.
+- A `dev` Docker image (`ghcr.io/bernie-sandler/bernard:dev`) built from the `dev` branch after every change, for trying unreleased changes. It can break between releases; use a version tag or `latest` for your real server.
 
 ### Changed
 
