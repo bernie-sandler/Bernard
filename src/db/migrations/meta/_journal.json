@@ -50,6 +50,13 @@
       "when": 1794959647256,
       "tag": "0006_nifty_triton",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1794967746996,
+      "tag": "0007_panoramic_omega_sentinel",
+      "breakpoints": true
     }
   ]
 }
