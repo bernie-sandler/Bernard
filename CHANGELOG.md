@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Hearing back on submit-page tickets. When the **Report an issue** button opens Belltower's submit page and `BELLTOWER_URL` and `BELLTOWER_TOKEN` are set, the panel's button and `/report` now hand each member their own link to the submit page. Bernard signs it, so it knows who sent the ticket and DMs them when it's done, with the resolution reason (or mentions them where they got the link if their DMs are closed). A link works for a day. The Issue reports page shows the member next to the name typed on the form. Needs Belltower 1.7.0 or later; with older versions tickets are listed as before and nobody is messaged. Without the API set up, the button still opens the shared link directly.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added

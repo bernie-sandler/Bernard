@@ -91,8 +91,9 @@ function ConnectionCard({ d }: { d: BelltowerResponse }) {
         <p className="text-sm text-slate-400">
           {link ? (
             <>
-              The report panel and <code>/report</code> send members to Belltower's submit page. Bernard lists
-              the tickets that come in through it.
+              The report panel and <code>/report</code> give each member their own link to Belltower's submit
+              page. Bernard lists the tickets that come in through it and tells members when theirs is done
+              (Belltower 1.7 or later).
             </>
           ) : (
             <>
@@ -181,7 +182,11 @@ function OptionsCard({ d }: { d: BelltowerResponse }) {
         {link && (
           <Field
             label="Submit page link"
-            hint="From Settings → Submit page in Belltower. Everyone who can see the panel can open it. Members aren't messaged when their ticket is done; the submit page gives them a status link instead."
+            hint={
+              d.configured
+                ? 'From Settings → Submit page in Belltower. Members get their own copy of it, so Bernard can tell them when their ticket is done.'
+                : "From Settings → Submit page in Belltower. Everyone who can see the panel can open it. Members aren't messaged when their ticket is done; the submit page gives them a status link instead."
+            }
           >
             <Input
               type="url"
@@ -259,9 +264,11 @@ function PanelCard({ d }: { d: BelltowerResponse }) {
       <div className="space-y-3">
         <p className="text-sm text-slate-400">
           A message with a <strong>Report an issue</strong> button.{' '}
-          {d.config.mode === 'link'
-            ? "It opens Belltower's submit page."
-            : "It opens a short form, so members don't need to know the command."}
+          {d.config.mode !== 'link'
+            ? "It opens a short form, so members don't need to know the command."
+            : d.configured
+              ? "It gives the member who presses it their own link to Belltower's submit page."
+              : "It opens Belltower's submit page."}
         </p>
         <Field label="Channel">
           <ChannelSelect
@@ -384,7 +391,12 @@ function SubmittedTable({ rows, open }: { rows: SubmittedTicketDto[]; open: bool
                   <div className="text-xs text-slate-500 tabular-nums">{r.ticketNo ?? `#${r.cardId}`}</div>
                 </td>
                 <td className="py-2 pr-3 text-sm">
-                  {r.submitter ?? <span className="text-slate-500">–</span>}
+                  {r.submitter ?? (r.submitterId ? null : <span className="text-slate-500">–</span>)}
+                  {r.submitterId && (
+                    <div className={r.submitter ? 'text-xs text-slate-500' : undefined}>
+                      @{r.submitterName ?? r.submitterId}
+                    </div>
+                  )}
                 </td>
                 <td className="py-2 pr-3">
                   <Badge tone={badge.tone}>{badge.label}</Badge>
@@ -392,6 +404,9 @@ function SubmittedTable({ rows, open }: { rows: SubmittedTicketDto[]; open: bool
                 </td>
                 <td className="py-2 pr-3 text-sm text-slate-400">
                   {relativeTime(open ? r.createdAt : (r.closedAt ?? r.createdAt))}
+                  {!open && r.notifiedVia && (
+                    <div className="text-xs text-slate-500">{NOTIFIED[r.notifiedVia]}</div>
+                  )}
                 </td>
               </tr>
             );

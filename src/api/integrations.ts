@@ -208,10 +208,13 @@ export function registerIntegrationRoutes(api: FastifyInstance, services: Servic
     ticketNo: r.ticketNo,
     title: r.title,
     submitter: r.submitter,
+    submitterId: r.submitterId,
+    submitterName: r.submitterId ? (services.guild.cachedMember(r.submitterId)?.displayName ?? null) : null,
     state: r.state,
     resolution: r.resolution,
     createdAt: r.createdAt.toISOString(),
     closedAt: r.closedAt?.toISOString() ?? null,
+    notifiedVia: r.notifiedVia,
   });
   const belltowerResponse = (): BelltowerResponse => {
     const view = services.belltower.view();

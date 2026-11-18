@@ -356,6 +356,12 @@ export const submittedTickets = sqliteTable(
     createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
     /** Set while it's done, archived or gone. Cleared if it's reopened. */
     closedAt: integer('closed_at', { mode: 'timestamp_ms' }),
+    /** The member who sent it, from the signed ref on their personal submit link. */
+    submitterId: text('submitter_id'),
+    /** Where they got the link; the fallback when their DMs are closed. */
+    channelId: text('channel_id'),
+    /** How they were told it closed; null while open or not yet told (reset when reopened). */
+    notifiedVia: text('notified_via', { enum: ['dm', 'channel', 'none'] }),
   },
   (t) => [
     uniqueIndex('submitted_tickets_card').on(t.guildId, t.cardId),

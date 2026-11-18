@@ -10,6 +10,7 @@ import {
   parseTickets,
 } from '../src/services/belltower/client.js';
 import { plain, REPORT_BUTTON_ID } from '../src/services/belltower/service.js';
+import { newRefKey, REF_LIFETIME_MS, signRef, verifyRef } from '../src/services/belltower/submitRef.js';
 import type { KumaMonitor } from '../src/services/status/kuma.js';
 import { apiHarness } from './apiHarness.js';
 import { GUILD_ID, makeActor, OWNER_ID, testContainer } from './helpers.js';
@@ -48,6 +49,13 @@ const rows = () => t.db.select().from(issueReports).all();
 const submitted = () => t.db.select().from(submittedTickets).all();
 
 const SUBMIT_URL = 'https://bt.example/submit/k3y';
+
+/** The `?ref=` of a personal submit page link. */
+function refOf(url: string | null): string {
+  const ref = url ? new URL(url).searchParams.get('ref') : null;
+  if (!ref) throw new Error(`no ref in ${url}`);
+  return ref;
+}
 
 /** Switch to link mode (the panel opens Belltower's submit page). */
 function linkMode(c = t, submitUrl: string | null = SUBMIT_URL) {
@@ -614,13 +622,62 @@ describe('settings migration', () => {
   });
 });
 
+describe('signed submit refs', () => {
+  const key = newRefKey();
+  const at = Date.UTC(2026, 10, 17, 12);
+  const claim = { userId: '111111111111111111', channelId: '222222222222222222', issuedAt: at };
+
+  it('round-trips, within a day of being handed out', () => {
+    const ref = signRef(key, GUILD_ID, claim);
+    expect(ref).toMatch(/^bn1\.111111111111111111\.222222222222222222\.\d+\.[\w-]{22}$/);
+    expect(ref.length).toBeLessThanOrEqual(200);
+    expect(verifyRef(key, GUILD_ID, ref, at + 60_000)).toEqual(claim);
+    expect(verifyRef(key, GUILD_ID, ref, at + REF_LIFETIME_MS)).toEqual(claim);
+    expect(verifyRef(key, GUILD_ID, ref, at + REF_LIFETIME_MS + 1)).toBeNull();
+    expect(verifyRef(key, GUILD_ID, ref, at - 60 * 60_000)).toBeNull();
+    const noChannel = signRef(key, GUILD_ID, { ...claim, channelId: null });
+    expect(verifyRef(key, GUILD_ID, noChannel, at)).toEqual({ ...claim, channelId: null });
+  });
+
+  it('rejects anything changed, another guild or key, and garbage', () => {
+    const ref = signRef(key, GUILD_ID, claim);
+    const parts = ref.split('.');
+    const swap = (i: number, v: string) => parts.map((p, j) => (j === i ? v : p)).join('.');
+    for (const bad of [
+      swap(1, '111111111111111112'),
+      swap(2, '0'),
+      swap(3, String(Number(parts[3]) + 1)),
+      swap(4, `${parts[4]!.slice(0, -1)}${parts[4]!.endsWith('A') ? 'B' : 'A'}`),
+      `${ref}=`,
+      swap(0, 'bn2'),
+      'bn1.1.2.3',
+      '',
+      'x'.repeat(200),
+    ]) {
+      expect(verifyRef(key, GUILD_ID, bad, at), bad).toBeNull();
+    }
+    expect(verifyRef(key, '999', ref, at)).toBeNull();
+    expect(verifyRef(newRefKey(), GUILD_ID, ref, at)).toBeNull();
+    expect(verifyRef(key, GUILD_ID, null, at)).toBeNull();
+  });
+});
+
 describe('link mode (submit page)', () => {
-  it('answers /report and old panel buttons with the submit page link', async () => {
+  it('answers /report and the panel button with a personal submit page link', async () => {
     linkMode();
-    const reply = await t.services.belltower.report(reporter(), { service: '', channelId: channel });
-    expect(reply).toContain(SUBMIT_URL);
+    const r = reporter();
+    const reply = await t.services.belltower.report(r, { service: '', channelId: channel });
+    expect(reply).toContain(`${SUBMIT_URL}?ref=bn1.${r.userId}.${channel}.`);
+    expect(reply).toMatch(/message you when your ticket is done/);
     expect(t.belltower.opened).toHaveLength(0);
-    expect(t.services.belltower.unavailableReason()).toContain(SUBMIT_URL);
+    // The panel button isn't blocked; it replies with the same kind of link.
+    expect(t.services.belltower.unavailableReason()).toBeNull();
+    const prompt = t.services.belltower.linkPrompt(r.userId, null);
+    expect(prompt.url).toMatch(new RegExp(`^${SUBMIT_URL}\\?ref=bn1\\.${r.userId}\\.0\\.\\d+\\.[\\w-]{22}$`));
+    // A link that already has a query keeps it.
+    linkMode(t, `${SUBMIT_URL}?lang=en`);
+    expect(t.services.belltower.linkPrompt(r.userId, null).url).toMatch(/\?lang=en&ref=bn1\./);
+    linkMode();
 
     t.services.settings.update(ADMIN, 'settings.belltower', (d) => {
       d.belltower.enabled = false;
@@ -648,6 +705,11 @@ describe('link mode (submit page)', () => {
       const [posted] = c.messenger.inChannel(ch);
       expect(posted!.msg.buttons).toEqual([expect.objectContaining({ url: SUBMIT_URL })]);
       expect(posted!.msg.buttons![0]!.customId).toBeUndefined();
+      // Nothing to follow up with, so everyone gets the shared link.
+      expect(c.services.belltower.linkPrompt('42', ch)).toEqual({
+        url: SUBMIT_URL,
+        text: expect.stringMatching(/ticket number and a link/),
+      });
 
       // Paused: the panel loses its button.
       c.services.settings.update(ADMIN, 'settings.belltower', (d) => {
@@ -708,6 +770,94 @@ describe('link mode (submit page)', () => {
     await t.services.belltower.poll();
     expect(submitted().find((r) => r.cardId === 1)).toMatchObject({ state: 'missing' });
     expect(submitted().find((r) => r.cardId === 1)!.closedAt).not.toBeNull();
+  });
+
+  it('tells the member who sent a ticket through their own link once it is done, and again after a reopen', async () => {
+    linkMode();
+    const r = reporter();
+    t.belltower.submit(
+      'Plex – stutters',
+      'Sam',
+      refOf(t.services.belltower.linkPrompt(r.userId, channel).url),
+    );
+    await t.services.belltower.poll();
+    expect(submitted()[0]).toMatchObject({ submitterId: r.userId, channelId: channel, notifiedVia: null });
+    expect(t.mod.callsTo('dm')).toHaveLength(0);
+
+    t.belltower.now += 60_000;
+    t.belltower.setState(1, 'done', 'Fixed');
+    await t.services.belltower.poll();
+    expect(t.mod.callsTo('dm').map((c) => c.args)).toEqual([
+      [r.userId, '✅ Your request **Plex – stutters** (ticket 261117-1) is resolved: Fixed.'],
+    ]);
+    expect(submitted()[0]!.notifiedVia).toBe('dm');
+    await t.services.belltower.poll();
+    expect(t.mod.callsTo('dm')).toHaveLength(1);
+
+    // Reopened, then closed again: told again. Gone for good: told it was closed.
+    t.belltower.now += 60_000;
+    t.belltower.setState(1, 'in_progress');
+    await t.services.belltower.poll();
+    expect(submitted()[0]).toMatchObject({ state: 'in_progress', closedAt: null, notifiedVia: null });
+    t.belltower.tickets.delete(1);
+    await t.services.belltower.poll();
+    expect(t.mod.callsTo('dm')[1]!.args).toEqual([
+      r.userId,
+      'ℹ️ Your request **Plex – stutters** (ticket 261117-1) was closed.',
+    ]);
+  });
+
+  it('mentions the member where they got the link when their DMs are closed', async () => {
+    linkMode();
+    const r = reporter();
+    t.belltower.submit('No sound', null, refOf(t.services.belltower.linkPrompt(r.userId, channel).url));
+    t.belltower.setState(1, 'done', 'Fixed');
+    t.mod.dmsOpen = false;
+    await t.services.belltower.poll();
+    const [msg] = t.messenger.inChannel(channel);
+    expect(msg!.msg.content).toMatch(new RegExp(`^<@${r.userId}> ✅ .*resolved: Fixed\\.$`));
+    expect(msg!.msg.mentionUserIds).toEqual([r.userId]);
+    expect(submitted()[0]!.notifiedVia).toBe('channel');
+  });
+
+  it('ignores refs it did not sign, refs for someone else and links older than a day', async () => {
+    linkMode();
+    const r = reporter();
+    const ref = refOf(t.services.belltower.linkPrompt(r.userId, channel).url);
+    const [v, , ch, issued, sig] = ref.split('.');
+    t.belltower.submit('Forged user', null, [v, '1234567890', ch, issued, sig].join('.'));
+    t.belltower.submit(
+      'Other key',
+      null,
+      signRef(newRefKey(), GUILD_ID, { userId: r.userId, channelId: null, issuedAt: Date.now() }),
+    );
+    t.belltower.submit('Garbage', null, 'not-a-ref');
+    t.belltower.now += REF_LIFETIME_MS + 60_000;
+    t.belltower.submit('Too late', null, ref);
+    for (const id of [1, 2, 3, 4]) t.belltower.setState(id, 'done', 'Fixed');
+    await t.services.belltower.poll();
+    expect(submitted().map((s) => [s.title, s.submitterId, s.state])).toEqual([
+      ['Forged user', null, 'done'],
+      ['Other key', null, 'done'],
+      ['Garbage', null, 'done'],
+      ['Too late', null, 'done'],
+    ]);
+    expect(t.mod.callsTo('dm')).toHaveLength(0);
+  });
+
+  it('still lists tickets from Belltower 1.6, which has no submitRef, without telling anyone', async () => {
+    linkMode();
+    t.belltower.noSubmitRef = true;
+    t.belltower.submit(
+      'No sound',
+      null,
+      refOf(t.services.belltower.linkPrompt(reporter().userId, channel).url),
+    );
+    t.belltower.setState(1, 'done', 'Fixed');
+    await t.services.belltower.poll();
+    expect(submitted()).toMatchObject([{ title: 'No sound', state: 'done', submitterId: null }]);
+    expect(t.services.belltower.view().error).toBeNull();
+    expect(t.mod.callsTo('dm')).toHaveLength(0);
   });
 
   it('keeps following reports filed through the API before the switch', async () => {
@@ -778,9 +928,9 @@ describe('link mode dashboard routes', () => {
     });
     expect(saved.statusCode).toBe(200);
     expect(saved.json()).toMatchObject({ panelReady: true, config: { mode: 'link', submitUrl: SUBMIT_URL } });
-    // The posted panel now links to the submit page.
+    // The posted panel now hands out personal links to the submit page (the API is set up).
     expect(h.t.messenger.inChannel(ch)[0]!.msg.buttons).toEqual([
-      expect.objectContaining({ url: SUBMIT_URL }),
+      expect.objectContaining({ customId: REPORT_BUTTON_ID }),
     ]);
 
     // A panel Discord won't update doesn't fail the save.
@@ -799,10 +949,22 @@ describe('link mode dashboard routes', () => {
     expect(kept.json().config).toMatchObject({ mode: 'link', submitUrl: SUBMIT_URL, cooldownSeconds: 60 });
 
     h.t.belltower.submit('Plex – stutters', 'Mum');
+    const member = h.t.guild.addMember({ displayName: 'Robin', username: 'robin' });
+    h.t.belltower.submit('No sound', null, refOf(h.t.services.belltower.linkPrompt(member.userId, ch).url));
     const polled = await c.send('POST', '/api/belltower/poll');
     expect(polled.json().submitted).toMatchObject({
       open: [
-        { cardId: 1, ticketNo: '261117-1', title: 'Plex – stutters', submitter: 'Mum', state: 'received' },
+        {
+          cardId: 1,
+          ticketNo: '261117-1',
+          title: 'Plex – stutters',
+          submitter: 'Mum',
+          submitterId: null,
+          submitterName: null,
+          state: 'received',
+          notifiedVia: null,
+        },
+        { cardId: 2, submitter: null, submitterId: member.userId, submitterName: 'Robin' },
       ],
       recent: [],
     });

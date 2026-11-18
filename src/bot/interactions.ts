@@ -13,7 +13,7 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js';
-import { toEmbed, toMemberInfo } from '../discord/adapters.js';
+import { toEmbed, toMemberInfo, toMessagePayload } from '../discord/adapters.js';
 import { describeDiscordError } from '../discord/errors.js';
 import type { Logger } from '../logger.js';
 import { REPORT_BUTTON_ID, REPORT_MODAL_ID } from '../services/belltower/service.js';
@@ -207,7 +207,10 @@ export function createInteractionHandler(deps: {
     await i.editReply({ content, allowedMentions: { parse: [] } });
   }
 
-  /** The report panel's button: open the report form. A modal must be the first reply, so no defer. */
+  /**
+   * The report panel's button: open the report form, or in link mode reply with the member's own
+   * submit page link. A modal must be the first reply, so no defer.
+   */
   async function handleReportButton(i: ButtonInteraction): Promise<void> {
     if (!i.inCachedGuild() || i.guildId !== services.guild.guildId) {
       await i.reply({ content: 'This panel only works in its home server.', flags: MessageFlags.Ephemeral });
@@ -219,6 +222,20 @@ export function createInteractionHandler(deps: {
       : "You don't have permission (`public:report`).";
     if (blocked) {
       await i.reply({ content: blocked, flags: MessageFlags.Ephemeral });
+      return;
+    }
+    // Link mode: hand over the member's own link to Belltower's submit page instead of a form.
+    if (services.settings.get().belltower.mode === 'link') {
+      const { text, url } = services.belltower.linkPrompt(i.user.id, i.channelId);
+      const { components } = toMessagePayload({
+        buttons: url ? [{ url, label: 'Open the request form', emoji: '🛎️' }] : [],
+      });
+      await i.reply({
+        content: text,
+        components,
+        flags: MessageFlags.Ephemeral,
+        allowedMentions: { parse: [] },
+      });
       return;
     }
     const service = new TextInputBuilder()
