@@ -92,8 +92,8 @@ export function ThatsCrazySettings() {
             >
               <div className="space-y-2">
                 {s.ladder.map((step, i) => (
-                  // biome-ignore lint/suspicious/noArrayIndexKey: steps have no identity besides their position
                   <div
+                    // biome-ignore lint/suspicious/noArrayIndexKey: steps have no identity besides their position
                     key={i}
                     className="grid grid-cols-[3.5rem_minmax(0,1fr)_5rem_1.5rem_1rem] items-center gap-2"
                   >
