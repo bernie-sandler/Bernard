@@ -18,7 +18,13 @@ export const REQUIRED_PERMISSIONS = [
   ['BanMembers', PermissionFlagsBits.BanMembers, '/ban, /unban, temp bans'],
   ['ModerateMembers', PermissionFlagsBits.ModerateMembers, '/timeout, /untimeout'],
   ['ManageNicknames', PermissionFlagsBits.ManageNicknames, '/nick'],
-  ['MoveMembers', PermissionFlagsBits.MoveMembers, 'Move members into temp voice channels, /vc kick'],
+  [
+    'MoveMembers',
+    PermissionFlagsBits.MoveMembers,
+    "Move members into temp voice channels, /vc kick, that's crazy disconnects",
+  ],
+  ['MuteMembers', PermissionFlagsBits.MuteMembers, "That's crazy server mutes"],
+  ['DeafenMembers', PermissionFlagsBits.DeafenMembers, "That's crazy server deafens"],
   ['Connect', PermissionFlagsBits.Connect, 'Grant Connect on private temp channels'],
   ['ViewAuditLog', PermissionFlagsBits.ViewAuditLog, 'Record bans/kicks/timeouts done outside the bot'],
 ] as const;

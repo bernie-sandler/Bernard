@@ -37,6 +37,7 @@ export const SECTION_NODES: Record<SettingsSection, string> = {
   tiers: 'config:tiers',
   moderation: 'config:settings',
   permissions: 'config:settings',
+  thatsCrazy: 'config:settings',
 };
 
 function toOptionDto(name: string, d: FlatCommand['leaf']['options'][string]): CommandOptionDto {

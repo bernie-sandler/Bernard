@@ -22,6 +22,11 @@ export function registerVoiceEvents(client: Client, services: Services, logger: 
     } catch (err) {
       logger.error({ err, userId: member.id }, 'Voice state handler failed');
     }
+    if (newState.channelId && !member.user.bot) {
+      await services.thatsCrazy
+        .onVoiceJoin(member.id)
+        .catch((err) => logger.error({ err, userId: member.id }, "That's crazy join handler failed"));
+    }
   });
 
   client.on(Events.ChannelDelete, (channel) => {

@@ -301,6 +301,67 @@ export const rolePanels = sqliteTable(
   (t) => [index('role_panels_guild').on(t.guildId)],
 );
 
+// ── "That's crazy" votes ────────────────────────────────────────────────────
+
+export const crazyPolls = sqliteTable(
+  'crazy_polls',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    targetId: text('target_id').notNull(),
+    starterId: text('starter_id').notNull(),
+    channelId: text('channel_id').notNull(),
+    /** Null until the poll message is posted. */
+    messageId: text('message_id'),
+    /** Votes needed to pass, fixed when the poll opens. */
+    needed: integer('needed').notNull(),
+    status: text('status', { enum: ['open', 'passed', 'failed'] })
+      .notNull()
+      .default('open'),
+    /** The target's strike number this poll gave them (passed polls only). */
+    strike: integer('strike'),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+    resolvedAt: integer('resolved_at', { mode: 'timestamp_ms' }),
+    /** A reset clears strikes by marking passed polls as pardoned. */
+    pardonedAt: integer('pardoned_at', { mode: 'timestamp_ms' }),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('crazy_polls_target').on(t.guildId, t.targetId, t.createdAt),
+    index('crazy_polls_status').on(t.guildId, t.status),
+  ],
+);
+
+export const crazyVotes = sqliteTable(
+  'crazy_votes',
+  {
+    pollId: integer('poll_id')
+      .notNull()
+      .references(() => crazyPolls.id, { onDelete: 'cascade' }),
+    voterId: text('voter_id').notNull(),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.pollId, t.voterId] })],
+);
+
+export const crazyPenalties = sqliteTable(
+  'crazy_penalties',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    guildId: text('guild_id').notNull(),
+    pollId: integer('poll_id').references(() => crazyPolls.id, { onDelete: 'set null' }),
+    targetId: text('target_id').notNull(),
+    action: text('action', { enum: ['mute', 'deafen', 'disconnect', 'timeout'] }).notNull(),
+    endsAt: integer('ends_at', { mode: 'timestamp_ms' }).notNull(),
+    /** First time the penalty took effect; null while waiting for the member to join voice. */
+    appliedAt: integer('applied_at', { mode: 'timestamp_ms' }),
+    /** Set once the penalty is over and undone (or was never applied before it ended). */
+    liftedAt: integer('lifted_at', { mode: 'timestamp_ms' }),
+    createdAt: createdAt(),
+  },
+  (t) => [index('crazy_penalties_open').on(t.guildId, t.liftedAt, t.targetId)],
+);
+
 // ── Issue reports (Belltower) ───────────────────────────────────────────────
 
 export const issueReports = sqliteTable(

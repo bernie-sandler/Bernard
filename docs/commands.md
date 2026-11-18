@@ -19,6 +19,8 @@ Every command checks a permission node before it runs (see [Permissions](permiss
 | `/announce channel message [embed] [title]`                | `admin:announce`                   | Write `\n` in `message` to start a new line. User and role mentions ping; @everyone never does.                                          |
 | `/case id`                                                 | `admin:case`                       |                                                                                                                                          |
 | `/logs set`, `/logs disable`, `/logs list`, `/logs config` | `config:logs`                      | See [Logs](logs.md).                                                                                                                     |
+| `/thatscrazy user`                                         | `public:thatscrazy`                | Vote on someone who said something crazy. See [That's crazy](thats-crazy.md).                                                            |
+| `/crazy strikes user`, `/crazy reset user`                 | `admin:crazy`                      | See [That's crazy](thats-crazy.md).                                                                                                      |
 
 Commands that default to the current channel (`purge`, `slowmode`, `lock`, `unlock`) require a channel when run from the dashboard.
 

@@ -11,6 +11,9 @@ const channelRef = snowflake.nullable().default(null);
 export const LOG_TYPES = ['moderation', 'members', 'messages', 'voice', 'server', 'commands'] as const;
 export type LogType = (typeof LOG_TYPES)[number];
 
+export const CRAZY_ACTIONS = ['mute', 'deafen', 'disconnect', 'timeout'] as const;
+export type CrazyAction = (typeof CRAZY_ACTIONS)[number];
+
 export const settingsSchema = z.object({
   permissions: z
     .object({
@@ -153,6 +156,60 @@ export const settingsSchema = z.object({
       cooldownSeconds: z.number().int().min(0).max(3600).default(120),
       /** Channel holding the "Report an issue" panel. null = no panel. */
       panelChannelId: channelRef,
+    })
+    .prefault({}),
+
+  /** "/thatscrazy @member": a quick vote that hands out escalating voice penalties. */
+  thatsCrazy: z
+    .object({
+      enabled: z.boolean().default(false),
+      /** How long a poll stays open. */
+      pollSeconds: z.number().int().min(15).max(3600).default(120),
+      /** Votes needed at least, the starter's included. */
+      minVotes: z.number().int().min(1).max(50).default(3),
+      /**
+       * Share of the other people in the target's voice channel who must vote, when that is more
+       * than minVotes. 0 = always minVotes.
+       */
+      voiceShare: z.number().min(0).max(1).default(0.5),
+      /** Passed polls older than this stop counting as strikes. */
+      strikeWindowDays: z.number().int().min(1).max(365).default(30),
+      /** Penalty for strike 1, 2, ...; the last step repeats. */
+      ladder: z
+        .array(
+          z.object({
+            action: z.enum(CRAZY_ACTIONS),
+            minutes: z.number().int().min(1).max(40_320),
+          }),
+        )
+        .min(1)
+        .max(10)
+        .default([
+          { action: 'mute', minutes: 1 },
+          { action: 'mute', minutes: 5 },
+          { action: 'disconnect', minutes: 10 },
+          { action: 'timeout', minutes: 30 },
+        ]),
+      /**
+       * DM for strike 1, 2, ...; the last one repeats. Placeholders: {count}, {action}, {minutes},
+       * {server}. An empty list sends no DM.
+       */
+      dmMessages: z
+        .array(z.string().trim().min(1).max(1000))
+        .max(10)
+        .default([
+          "That's crazy. The people of {server} voted, and you're {action} for {minutes} min.",
+          'Strike {count}. {server} has had enough: {action} for {minutes} min.',
+          'Strike {count}. At this point it is a lifestyle. {action} for {minutes} min.',
+        ]),
+      /** No new poll on someone this long after a poll on them passed. */
+      targetCooldownMinutes: z.number().int().min(0).max(1440).default(15),
+      /** No new poll on someone this long after a poll on them failed. */
+      failedCooldownMinutes: z.number().int().min(0).max(1440).default(5),
+      /** Minimum time between two polls started by the same member. */
+      starterCooldownMinutes: z.number().int().min(0).max(1440).default(5),
+      /** Members with any of these roles can't be targeted. Bots and the owner never can. */
+      exemptRoleIds: z.array(snowflake).max(50).default([]),
     })
     .prefault({}),
 });

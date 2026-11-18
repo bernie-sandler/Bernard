@@ -332,7 +332,8 @@ export type SettingsSection =
   | 'voice'
   | 'activity'
   | 'tenure'
-  | 'tiers';
+  | 'tiers'
+  | 'thatsCrazy';
 
 export interface SettingsResponse {
   /** The full settings object (see src/config/settings.ts). */

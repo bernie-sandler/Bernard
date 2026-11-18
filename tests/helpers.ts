@@ -439,6 +439,9 @@ export class FakeVoice implements VoicePort {
   failCreate = false;
   failMove = false;
   deafened = new Set<string>();
+  /** Server mute / deafen set by the bot (Discord keeps them across reconnects). */
+  serverMuted = new Set<string>();
+  serverDeafened = new Set<string>();
   afk: string | null = null;
 
   snapshot() {
@@ -496,6 +499,12 @@ export class FakeVoice implements VoicePort {
   }
   memberVoiceChannel(userId: string) {
     return this.states.get(userId) ?? null;
+  }
+  async setServerVoice(userId: string, state: { mute?: boolean; deaf?: boolean }) {
+    if (!this.states.has(userId)) throw new Error('Target user is not connected to voice.');
+    if (state.mute !== undefined) state.mute ? this.serverMuted.add(userId) : this.serverMuted.delete(userId);
+    if (state.deaf !== undefined)
+      state.deaf ? this.serverDeafened.add(userId) : this.serverDeafened.delete(userId);
   }
   async setUserLimit(channelId: string, limit: number) {
     this.limits.set(channelId, limit);

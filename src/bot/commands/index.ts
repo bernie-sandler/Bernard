@@ -7,6 +7,7 @@ import { moderationCommands } from './moderation.js';
 import { permissionCommands } from './permissions.js';
 import { roleCommands } from './roles.js';
 import { statusCommands } from './status.js';
+import { thatsCrazyCommands } from './thatsCrazy.js';
 import { tierCommands } from './tiers.js';
 import { voiceCommands } from './voice.js';
 
@@ -22,4 +23,5 @@ export const allCommands: CommandDefinition[] = [
   ...statusCommands,
   ...roleCommands,
   ...belltowerCommands,
+  ...thatsCrazyCommands,
 ];

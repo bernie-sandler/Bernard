@@ -39,7 +39,7 @@
 
 ### Bot permissions
 
-`pnpm invite-url` prints the exact list and the permission integer: View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Pin Messages, Manage Channels, Manage Roles, Kick Members, Ban Members, Moderate Members, Manage Nicknames, Move Members, Connect and View Audit Log. The scopes are `bot` and `applications.commands`.
+`pnpm invite-url` prints the exact list and the permission integer: View Channels, Send Messages, Embed Links, Read Message History, Manage Messages, Pin Messages, Manage Channels, Manage Roles, Kick Members, Ban Members, Moderate Members, Manage Nicknames, Move Members, Mute Members, Deafen Members, Connect and View Audit Log. The scopes are `bot` and `applications.commands`.
 
 ## Environment variables
 
