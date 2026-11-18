@@ -200,6 +200,8 @@ const helpChannel = guild.addChannel('help');
 await services.belltower.setPanelChannel(system, helpChannel);
 services.settings.update(system, 'demo', (s) => {
   s.belltower.cooldownSeconds = 0;
+  // Ready for switching to "Opens Belltower's submit page" on the Issue reports page.
+  s.belltower.submitUrl = 'https://belltower.example/submit/demo';
 });
 const reporterOf = (id: string) => {
   const m = guild.members.get(id)!;
@@ -224,7 +226,13 @@ await services.belltower.report(reporterOf(memberIds[3]!), {
 t.belltower.setState(2, 'in_progress');
 t.belltower.setState(3, 'done', 'Fixed');
 t.belltower.submit('Plex – Interstellar – stutters', 'Mum');
-t.belltower.submit('Minecraft – server full');
+// Sent through a member's own link from the panel, so Bernard knows who to tell.
+const personal = services.belltower.submitLink(memberIds[4]!, helpChannel);
+t.belltower.submit(
+  'Minecraft – server full',
+  null,
+  personal ? new URL(personal).searchParams.get('ref') : null,
+);
 await services.belltower.poll();
 
 // ── Activity history (60 days) ──────────────────────────────────────────────

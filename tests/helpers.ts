@@ -303,6 +303,8 @@ export class FakeBelltower implements BelltowerClient {
   listed: string[] = [];
   /** Leave `source` out of listChanged answers, like Belltower before 1.6.0. */
   old = false;
+  /** Leave `submitRef` out of listChanged answers, like Belltower 1.6. */
+  noSubmitRef = false;
   now = Date.now();
   private nextId = 1;
 
@@ -311,7 +313,7 @@ export class FakeBelltower implements BelltowerClient {
   }
 
   /** A ticket sent through the submit page. */
-  submit(title: string, submitter: string | null = null): ListedTicket {
+  submit(title: string, submitter: string | null = null, submitRef: string | null = null): ListedTicket {
     const id = this.nextId++;
     const ticket: ListedTicket = {
       id,
@@ -325,6 +327,7 @@ export class FakeBelltower implements BelltowerClient {
       updatedAt: this.stamp(),
       source: 'submit',
       submitter,
+      submitRef,
     };
     this.tickets.set(id, ticket);
     return ticket;
@@ -337,7 +340,13 @@ export class FakeBelltower implements BelltowerClient {
     const cards = [...this.tickets.values()]
       .filter((t) => t.updatedAt >= since)
       .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt) || a.id - b.id)
-      .map(({ dedupeKey: _key, source, submitter, ...t }) => (this.old ? t : { ...t, source, submitter }));
+      .map(({ dedupeKey: _key, source, submitter, submitRef, ...t }) =>
+        this.old
+          ? t
+          : this.noSubmitRef
+            ? { ...t, source, submitter }
+            : { ...t, source, submitter, submitRef },
+      );
     // Through the real parser, so an old Belltower fails the way it would.
     const { tickets, generatedAt } = parseTicketPage({
       cards,
@@ -371,6 +380,7 @@ export class FakeBelltower implements BelltowerClient {
       updatedAt: this.stamp(),
       source: 'api',
       submitter: null,
+      submitRef: null,
       ...(card.dedupeKey ? { dedupeKey: card.dedupeKey } : {}),
     };
     this.tickets.set(id, ticket);

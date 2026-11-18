@@ -43,6 +43,13 @@
       "when": 1794953405095,
       "tag": "0005_youthful_daredevil",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1794959647256,
+      "tag": "0006_nifty_triton",
+      "breakpoints": true
     }
   ]
 }

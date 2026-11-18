@@ -43,6 +43,8 @@ export interface ListedTicket extends TicketInfo {
   source: string;
   /** The name typed on the submit page, or null. */
   submitter: string | null;
+  /** The `?ref=` the submit page link carried (Belltower 1.7.0+), or null. */
+  submitRef: string | null;
 }
 
 export interface ChangedTickets {
@@ -93,6 +95,8 @@ const listedSchema = ticketSchema.extend({
   // Optional so an older Belltower gets a readable error instead of "not in the expected format".
   source: z.string().optional(),
   submitter: z.string().nullable().optional(),
+  // Belltower 1.7.0+. Older versions leave it out: those tickets just can't be followed up.
+  submitRef: z.string().nullable().optional(),
 });
 
 /** Most pages one listChanged call reads (200 tickets each). */
@@ -225,6 +229,7 @@ export function parseTicketPage(json: unknown): ChangedTickets & { next: string 
       ...{ id, ticketNo, title, state, resolution, archivedAt, deletedAt, createdAt, updatedAt },
       source: t.data.source,
       submitter: t.data.submitter ?? null,
+      submitRef: t.data.submitRef ?? null,
     };
   });
   return {

@@ -463,11 +463,17 @@ export interface SubmittedTicketDto {
   title: string;
   /** The name typed on the submit page. */
   submitter: string | null;
+  /** The member who sent it through their own link from Bernard, or null. */
+  submitterId: string | null;
+  /** That member's display name when cached, else null. */
+  submitterName: string | null;
   /** received, in_progress, waiting, done, archived, deleted or missing. */
   state: string;
   resolution: string | null;
   createdAt: string;
   closedAt: string | null;
+  /** How the member was told it closed; null if nobody to tell (or not yet). */
+  notifiedVia: 'dm' | 'channel' | 'none' | null;
 }
 
 export interface BelltowerResponse {

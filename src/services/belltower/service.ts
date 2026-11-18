@@ -18,10 +18,13 @@ import {
   type NewCard,
   type TicketInfo,
 } from './client.js';
+import { newRefKey, signRef, verifyRef } from './submitRef.js';
 
 const PANEL_KEY = 'belltower.panel';
 /** Belltower's generatedAt from the last read of submit-page tickets: where the next read starts. */
 const SUBMIT_SINCE_KEY = 'belltower.submitSince';
+/** Signs the ref on members' personal submit page links (submitRef.ts). */
+const REF_KEY = 'belltower.refKey';
 const EPOCH = '1970-01-01T00:00:00.000Z';
 
 /** Custom IDs of the panel's button and the modal it opens. */
@@ -176,30 +179,69 @@ export class BelltowerService {
   /** Why a member can't report right now, or null. Checked before the panel opens its form. */
   unavailableReason(): string | null {
     const cfg = this.d.settings.get().belltower;
-    // An old panel button pressed after switching to link mode.
-    if (cfg.mode === 'link') return this.linkReply();
+    if (cfg.mode === 'link') return this.linkBlocked();
     if (!this.d.client) return "Reporting isn't set up on this server.";
     if (!cfg.enabled) return 'Reports are paused right now. Please tell an admin directly.';
     return null;
   }
 
-  /** Link mode's answer to /report and the panel: where the request form is. */
-  private linkReply(): string {
+  /** Link mode: why the request form can't be handed out, or null. */
+  private linkBlocked(): string | null {
     const cfg = this.d.settings.get().belltower;
     if (!cfg.enabled) return 'Reports are paused right now. Please tell an admin directly.';
     if (!cfg.submitUrl) return "Reporting isn't set up on this server.";
-    return (
-      `Report it on the request form: ${cfg.submitUrl}\n` +
-      "You'll get a ticket number and a link to check on it there."
-    );
+    return null;
+  }
+
+  private refKey(): string {
+    const stored = this.d.state.get(REF_KEY);
+    if (stored && /^[0-9a-f]{64}$/.test(stored)) return stored;
+    const key = newRefKey();
+    this.d.state.set(REF_KEY, key);
+    return key;
+  }
+
+  /**
+   * The submit page link to give a member: their own, carrying a signed ref, when Bernard can read
+   * tickets back (BELLTOWER_URL and BELLTOWER_TOKEN set); otherwise the shared link.
+   */
+  submitLink(userId: string, channelId: string | null): string | null {
+    const url = this.d.settings.get().belltower.submitUrl;
+    if (!url || !this.configured()) return url;
+    try {
+      const personal = new URL(url);
+      const ref = signRef(this.refKey(), this.d.guildId, { userId, channelId, issuedAt: this.now() });
+      personal.searchParams.set('ref', ref);
+      return personal.toString();
+    } catch {
+      return url;
+    }
+  }
+
+  /**
+   * Link mode's answer to /report and the panel's button: the (personal) request form link, or why
+   * there isn't one (`url` null).
+   */
+  linkPrompt(userId: string, channelId: string | null): { text: string; url: string | null } {
+    const blocked = this.linkBlocked();
+    const url = blocked ? null : this.submitLink(userId, channelId);
+    if (!url) return { text: blocked ?? "Reporting isn't set up on this server.", url: null };
+    return {
+      text: this.configured()
+        ? "It's your own link: I'll message you when your ticket is done. It works for a day, so " +
+          "don't share it."
+        : "You'll get a ticket number and a link to check on it there.",
+      url,
+    };
   }
 
   /** File a report. Returns the reply for the reporter. */
   async report(reporter: Reporter, input: ReportInput): Promise<string> {
     const cfg = this.d.settings.get().belltower;
     if (cfg.mode === 'link') {
-      if (!cfg.enabled || !cfg.submitUrl) throw new UserError(this.linkReply());
-      return this.linkReply();
+      const { text, url } = this.linkPrompt(reporter.userId, input.channelId);
+      if (!url) throw new UserError(text);
+      return `Report it on the request form: ${url}\n${text}`;
     }
     if (this.inFlight.has(reporter.userId)) throw new UserError('Your last report is still being sent.');
     this.inFlight.add(reporter.userId);
@@ -364,14 +406,25 @@ export class BelltowerService {
       }
     }
     this.d.state.set(SUBMIT_SINCE_KEY, generatedAt);
+    if (await this.notifySubmitters()) changed = true;
     return changed;
   }
 
-  /** Insert or update one submit-page ticket. Returns whether the stored row changed. */
+  /**
+   * Insert or update one submit-page ticket. A valid signed ref names the member who sent it; once
+   * it closes they're told (notifySubmitters), and again if it's reopened and closes again.
+   * Returns whether the stored row changed.
+   */
   private storeSubmission(t: ListedTicket, state: string): boolean {
     const base = and(eq(submittedTickets.guildId, this.d.guildId), eq(submittedTickets.cardId, t.id));
     const existing = this.d.db.select().from(submittedTickets).where(base).get();
     const final = FINAL_STATES.has(state);
+    const parsed = Date.parse(t.createdAt);
+    const created = Number.isNaN(parsed) ? this.now() : parsed;
+    const who =
+      t.submitRef && !existing?.submitterId
+        ? verifyRef(this.refKey(), this.d.guildId, t.submitRef, created)
+        : null;
     const values = {
       ticketNo: t.ticketNo,
       title: t.title.slice(0, 300),
@@ -379,30 +432,63 @@ export class BelltowerService {
       state,
       resolution: state === 'done' ? t.resolution : null,
       closedAt: final ? (existing?.closedAt ?? new Date(this.now())) : null,
+      // Pending (null) until the closing is told; cleared again when it's reopened.
+      notifiedVia: final && existing?.closedAt ? existing.notifiedVia : null,
+      ...(who ? { submitterId: who.userId, channelId: who.channelId } : {}),
     };
     if (!existing) {
-      const created = Date.parse(t.createdAt);
       this.d.db
         .insert(submittedTickets)
-        .values({
-          guildId: this.d.guildId,
-          cardId: t.id,
-          createdAt: new Date(Number.isNaN(created) ? this.now() : created),
-          ...values,
-        })
+        .values({ guildId: this.d.guildId, cardId: t.id, createdAt: new Date(created), ...values })
         .run();
       return true;
     }
     const same =
+      !who &&
       existing.ticketNo === values.ticketNo &&
       existing.title === values.title &&
       existing.submitter === values.submitter &&
       existing.state === values.state &&
       existing.resolution === values.resolution &&
+      existing.notifiedVia === values.notifiedVia &&
       (existing.closedAt === null) === (values.closedAt === null);
     if (same) return false;
     this.d.db.update(submittedTickets).set(values).where(base).run();
     return true;
+  }
+
+  /** Tell members whose submit-page tickets closed and who haven't heard yet. Returns whether any were. */
+  private async notifySubmitters(): Promise<boolean> {
+    const pending = this.d.db
+      .select()
+      .from(submittedTickets)
+      .where(
+        and(
+          eq(submittedTickets.guildId, this.d.guildId),
+          isNotNull(submittedTickets.closedAt),
+          isNotNull(submittedTickets.submitterId),
+          isNull(submittedTickets.notifiedVia),
+        ),
+      )
+      .all();
+    for (const row of pending) {
+      // Claim it first: only the update that claims it notifies.
+      const claimed = this.d.db
+        .update(submittedTickets)
+        .set({ notifiedVia: 'none' })
+        .where(and(eq(submittedTickets.id, row.id), isNull(submittedTickets.notifiedVia)))
+        .run();
+      if (claimed.changes === 0 || !row.submitterId) continue;
+      const ticket = ticketLabel(row);
+      const title = `**${plain(clip(oneLine(row.title), 100))}**`;
+      const text =
+        row.state === 'done'
+          ? `✅ Your request ${title} (ticket ${ticket}) is resolved${row.resolution ? `: ${plain(row.resolution)}` : ''}.`
+          : `ℹ️ Your request ${title} (ticket ${ticket}) was closed.`;
+      const notifiedVia = await this.tell(row.submitterId, row.channelId, text);
+      this.d.db.update(submittedTickets).set({ notifiedVia }).where(eq(submittedTickets.id, row.id)).run();
+    }
+    return pending.length > 0;
   }
 
   /** `keepError`: the submit-page read failed this round, so a working read here doesn't clear it. */
@@ -478,16 +564,25 @@ export class BelltowerService {
       state === 'done'
         ? `✅ Your report about ${name} (ticket ${ticket}) is resolved${resolution ? `: ${plain(resolution)}` : ''}.`
         : `ℹ️ Ticket ${ticket} for your report about ${name} was closed.`;
-    if (await this.d.mod.dm(row.reporterId, text)) return 'dm';
-    if (row.channelId) {
+    return this.tell(row.reporterId, row.channelId, text);
+  }
+
+  /** DM a member; if their DMs are closed, mention them in `channelId` instead. */
+  private async tell(
+    userId: string,
+    channelId: string | null,
+    text: string,
+  ): Promise<'dm' | 'channel' | 'none'> {
+    if (await this.d.mod.dm(userId, text)) return 'dm';
+    if (channelId) {
       try {
-        const sent = await this.d.messenger.send(row.channelId, {
-          content: `<@${row.reporterId}> ${text}`,
-          mentionUserIds: [row.reporterId],
+        const sent = await this.d.messenger.send(channelId, {
+          content: `<@${userId}> ${text}`,
+          mentionUserIds: [userId],
         });
         if (sent) return 'channel';
       } catch (err) {
-        this.d.logger.warn({ err, channelId: row.channelId }, 'Could not post a report update');
+        this.d.logger.warn({ err, channelId }, 'Could not post a report update');
       }
     }
     return 'none';
@@ -563,6 +658,20 @@ export class BelltowerService {
             description: 'Reports are paused right now. Please tell an admin directly.',
             color: COLORS.info,
           },
+        };
+      }
+      // With the API, the button hands each member their own link (a link button is the same for
+      // everyone), so Bernard can tell them when their ticket is done.
+      if (this.configured()) {
+        return {
+          embed: {
+            title: 'Something not working?',
+            description:
+              'Press **Report an issue** to get your own link to the request form. ' +
+              "I'll message you when your ticket is done.",
+            color: COLORS.info,
+          },
+          buttons: [{ customId: REPORT_BUTTON_ID, label: 'Report an issue', emoji: '🛎️', style: 'primary' }],
         };
       }
       return {
