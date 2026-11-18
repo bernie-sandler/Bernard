@@ -21,6 +21,7 @@ import { SessionService } from './sessions.js';
 import { SettingsService } from './settings.js';
 import { HttpKumaClient, type KumaClient } from './status/kuma.js';
 import { StatusService } from './status/service.js';
+import { ThatsCrazyService } from './thatsCrazy.js';
 import { TierService } from './tiers.js';
 import { VoiceService } from './voice.js';
 
@@ -45,6 +46,7 @@ export interface Services {
   status: StatusService;
   rolePanels: RolePanelService;
   belltower: BelltowerService;
+  thatsCrazy: ThatsCrazyService;
   state: BotStateStore;
   sessions: SessionService;
   live: LiveEvents;
@@ -157,6 +159,18 @@ export function createContainer(deps: ContainerDeps): Container {
     live,
   });
 
+  const thatsCrazy = new ThatsCrazyService({
+    db,
+    guildId,
+    guild,
+    voice: deps.voice,
+    mod: deps.mod,
+    messenger: deps.messenger,
+    settings,
+    audit,
+    logger,
+  });
+
   const services: Services = {
     db,
     logger,
@@ -177,6 +191,7 @@ export function createContainer(deps: ContainerDeps): Container {
     status,
     rolePanels,
     belltower,
+    thatsCrazy,
     state,
     sessions,
     live,

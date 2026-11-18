@@ -23,6 +23,7 @@ import type { Actor } from '../services/commands/types.js';
 import type { Services } from '../services/container.js';
 import { isUserError } from '../services/errors.js';
 import { parsePanelCustomId } from '../services/rolePanels.js';
+import { parseCrazyVoteId } from '../services/thatsCrazy.js';
 import type { CommandResult } from '../shared/commandResult.js';
 
 export function actorFromMember(member: GuildMember): Actor {
@@ -207,6 +208,28 @@ export function createInteractionHandler(deps: {
     await i.editReply({ content, allowedMentions: { parse: [] } });
   }
 
+  /** The vote button on a that's crazy poll. Same rule as the command (public:thatscrazy). */
+  async function handleCrazyVote(i: ButtonInteraction, pollId: number): Promise<void> {
+    if (!i.inCachedGuild() || i.guildId !== services.guild.guildId) return;
+    if (!services.permissions.check(actorFromMember(i.member), 'public:thatscrazy').allowed) {
+      await i.reply({
+        content: "You don't have permission (`public:thatscrazy`).",
+        flags: MessageFlags.Ephemeral,
+      });
+      return;
+    }
+    await i.deferReply({ flags: MessageFlags.Ephemeral });
+    let content: string;
+    try {
+      content = await services.thatsCrazy.vote(pollId, i.user.id);
+    } catch (err) {
+      const readable = isUserError(err) ? err.message : describeDiscordError(err);
+      if (!readable) logger.error({ err, pollId }, "That's crazy vote failed");
+      content = readable ?? 'Something went wrong.';
+    }
+    await i.editReply({ content, allowedMentions: { parse: [] } });
+  }
+
   /**
    * The report panel's button: open the report form, or in link mode reply with the member's own
    * submit page link. A modal must be the first reply, so no defer.
@@ -296,7 +319,9 @@ export function createInteractionHandler(deps: {
     try {
       if (interaction.isChatInputCommand()) await handleChatInput(interaction);
       else if (interaction.isAutocomplete()) await handleAutocomplete(interaction);
-      else if (interaction.isButton() && interaction.customId === REPORT_BUTTON_ID) {
+      else if (interaction.isButton() && parseCrazyVoteId(interaction.customId) !== null) {
+        await handleCrazyVote(interaction, parseCrazyVoteId(interaction.customId) as number);
+      } else if (interaction.isButton() && interaction.customId === REPORT_BUTTON_ID) {
         await handleReportButton(interaction);
       } else if (interaction.isModalSubmit() && interaction.customId === REPORT_MODAL_ID) {
         await handleReportModal(interaction);

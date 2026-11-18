@@ -2,6 +2,7 @@ import { Link } from 'react-router';
 import { PageHeader } from '../components/Layout.js';
 import { ChannelSelect } from '../components/pickers.js';
 import { SettingsCard, Toggle, useSettings } from '../components/SettingsForm.js';
+import { ThatsCrazySettings } from '../components/ThatsCrazySettings.js';
 import { Card, ErrorBox, Field, FullPageSpinner, Input } from '../components/ui.js';
 
 const LOG_TYPES: { key: string; label: string; hint: string }[] = [
@@ -312,6 +313,8 @@ export function SettingsPage() {
               />
             )}
           </SettingsCard>
+
+          <ThatsCrazySettings />
 
           <Card title="Elsewhere">
             <p className="text-sm text-slate-400">

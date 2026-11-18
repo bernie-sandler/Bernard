@@ -111,6 +111,16 @@ export class DiscordVoice implements VoicePort {
     return this.guild().voiceStates.cache.get(userId)?.channelId ?? null;
   }
 
+  async setServerVoice(
+    userId: string,
+    state: { mute?: boolean; deaf?: boolean },
+    reason?: string,
+  ): Promise<void> {
+    const member = await this.guild().members.fetch(userId);
+    if (state.mute !== undefined) await member.voice.setMute(state.mute, reason);
+    if (state.deaf !== undefined) await member.voice.setDeaf(state.deaf, reason);
+  }
+
   async setUserLimit(channelId: string, limit: number): Promise<void> {
     await this.voiceChannel(channelId).setUserLimit(limit);
   }

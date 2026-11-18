@@ -32,6 +32,9 @@ export function startJobs(services: Services, logger: Logger): Scheduler {
   // Tell members when the Belltower tickets they reported are done.
   scheduler.add('belltower-poll', '* * * * *', () => services.belltower.poll(), { runOnStart: true });
 
+  // Close that's crazy polls that ran out and start or end their penalties.
+  scheduler.add('thatscrazy-tick', '* * * * *', () => services.thatsCrazy.tick(), { runOnStart: true });
+
   // Drop daily activity rows older than the history kept for charts.
   scheduler.add('activity-retention', '45 3 * * *', () => services.activity.prune(), { runOnStart: true });
 

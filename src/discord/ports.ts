@@ -184,6 +184,8 @@ export interface VoicePort {
   channelMembers(channelId: string): string[];
   /** The voice channel a member is connected to, if any. */
   memberVoiceChannel(userId: string): string | null;
+  /** Server-mute and/or server-deafen a member. Discord rejects this while they aren't connected to voice. */
+  setServerVoice(userId: string, state: { mute?: boolean; deaf?: boolean }, reason?: string): Promise<void>;
   setUserLimit(channelId: string, limit: number): Promise<void>;
   rename(channelId: string, name: string): Promise<void>;
   /** true = deny Connect for @everyone, false = remove that deny. */
