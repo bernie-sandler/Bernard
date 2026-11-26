@@ -133,7 +133,9 @@ export function registerManagementRoutes(
       req.query,
     );
     const command = services.registry.find(q.command);
-    const handler = command?.leaf.autocomplete?.[q.option];
+    const handlers = command?.leaf.autocomplete;
+    // Own keys only: an inherited name like `constructor` would call an Object.prototype method.
+    const handler = handlers && Object.hasOwn(handlers, q.option) ? handlers[q.option] : undefined;
     if (!command || !handler) return [];
     const actor = requireActor(req);
     if (!services.permissions.check(actor, command.leaf.node).allowed) return [];
@@ -393,6 +395,11 @@ export function registerManagementRoutes(
     if (!can(req, node)) throw new HttpError(403, `You don't have permission (${node}).`, node);
     if (!isPlainObject(req.body)) throw new HttpError(400, 'Expected an object of settings to change.');
     const patch = req.body;
+    // Only keys the section already has (every setting has a default), so nothing else gets merged in.
+    const known = services.settings.get()[section] as Record<string, unknown>;
+    const unknownKeys = Object.keys(patch).filter((k) => !Object.hasOwn(known, k));
+    if (unknownKeys.length)
+      throw new HttpError(400, `Unknown ${section} setting: ${unknownKeys.join(', ')}.`);
 
     // Like /logs set: prove the bot can post in a newly routed log channel before saving.
     if (section === 'logs' && isPlainObject(patch.channels)) {
@@ -419,11 +426,15 @@ export function registerManagementRoutes(
 
     const next = services.settings.update(auditActor(req), `settings.${section}`, (draft) => {
       const target = draft[section] as Record<string, unknown>;
-      for (const [k, v] of Object.entries(patch)) {
+      // Keys come from the stored settings, never the request, so nothing outside them gets written.
+      for (const k of Object.keys(target)) {
+        if (!Object.hasOwn(patch, k)) continue;
+        const v = patch[k];
         const existing = target[k];
         // One level of merge (e.g. logs.channels), arrays and scalars replace.
-        if (isPlainObject(v) && isPlainObject(existing)) Object.assign(existing, v);
-        else target[k] = v;
+        if (isPlainObject(v) && isPlainObject(existing)) {
+          for (const nk of Object.keys(existing)) if (Object.hasOwn(v, nk)) existing[nk] = v[nk];
+        } else target[k] = v;
       }
     });
     return { settings: next[section] };
