@@ -90,9 +90,6 @@ const syncDto = (s: SyncSummary | null): SyncSummaryDto | null =>
 const isPlainObject = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
 
-/** Keys that would reach Object.prototype if assigned from request input. */
-const isUnsafeKey = (k: string) => k === '__proto__' || k === 'constructor' || k === 'prototype';
-
 /** Management routes for phase 6 (mounted under /api with authentication and CSRF hooks). */
 export function registerManagementRoutes(
   api: FastifyInstance,
@@ -400,7 +397,7 @@ export function registerManagementRoutes(
     const patch = req.body;
     // Only keys the section already has (every setting has a default), so nothing else gets merged in.
     const known = services.settings.get()[section] as Record<string, unknown>;
-    const unknownKeys = Object.keys(patch).filter((k) => isUnsafeKey(k) || !Object.hasOwn(known, k));
+    const unknownKeys = Object.keys(patch).filter((k) => !Object.hasOwn(known, k));
     if (unknownKeys.length)
       throw new HttpError(400, `Unknown ${section} setting: ${unknownKeys.join(', ')}.`);
 
@@ -429,12 +426,14 @@ export function registerManagementRoutes(
 
     const next = services.settings.update(auditActor(req), `settings.${section}`, (draft) => {
       const target = draft[section] as Record<string, unknown>;
-      for (const [k, v] of Object.entries(patch)) {
-        if (isUnsafeKey(k) || !Object.hasOwn(target, k)) continue;
+      // Keys come from the stored settings, never the request, so nothing outside them gets written.
+      for (const k of Object.keys(target)) {
+        if (!Object.hasOwn(patch, k)) continue;
+        const v = patch[k];
         const existing = target[k];
         // One level of merge (e.g. logs.channels), arrays and scalars replace.
         if (isPlainObject(v) && isPlainObject(existing)) {
-          for (const [nk, nv] of Object.entries(v)) if (!isUnsafeKey(nk)) existing[nk] = nv;
+          for (const nk of Object.keys(existing)) if (Object.hasOwn(v, nk)) existing[nk] = v[nk];
         } else target[k] = v;
       }
     });

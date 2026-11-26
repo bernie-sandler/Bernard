@@ -347,6 +347,15 @@ describe('Settings', () => {
     }
     expect(t.services.settings.get().logs).toEqual(before);
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+    // Nested objects only take the keys they already have.
+    const ch = t.guild.addChannel('mod-log');
+    const ok = await c.send('PATCH', '/api/settings/logs', {
+      channels: { moderation: ch, constructor: { polluted: true } },
+    });
+    expect(ok.statusCode).toBe(200);
+    expect(t.services.settings.get().logs.channels).toEqual({ ...before.channels, moderation: ch });
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it('refuses log channels the bot cannot post in', async () => {
