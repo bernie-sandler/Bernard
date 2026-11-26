@@ -156,6 +156,11 @@ describe('Command Runner', () => {
     expect((await s.get('/api/commands/autocomplete?command=tiers%20edit&option=tier&q=')).json()).toEqual(
       [],
     );
+    for (const option of ['constructor', 'toString', 'hasOwnProperty']) {
+      const inherited = await c.get(`/api/commands/autocomplete?command=tiers%20edit&option=${option}&q=`);
+      expect(inherited.statusCode).toBe(200);
+      expect(inherited.json()).toEqual([]);
+    }
     const res = (await c.send('POST', '/api/commands/run', { command: 'tiers list', input: {} })).json();
     expect(res.mentions.roles[role]).toMatchObject({ name: 'Regular' });
   });
@@ -326,6 +331,22 @@ describe('Settings', () => {
     expect(bad.statusCode).toBe(400);
     expect(t.services.settings.get().voice.graceSeconds).toBe(10);
     expect((await c.send('PATCH', '/api/settings/bogus', {})).statusCode).toBe(400);
+  });
+
+  it('rejects keys the section does not have', async () => {
+    const c = await owner();
+    const before = t.services.settings.get().logs;
+    for (const body of [
+      { nope: 1 },
+      { constructor: { polluted: true } },
+      { retentionDays: 14, extra: 'x' },
+    ]) {
+      const res = await c.send('PATCH', '/api/settings/logs', body);
+      expect(res.statusCode).toBe(400);
+      expect(res.json().error).toMatch(/Unknown logs setting/);
+    }
+    expect(t.services.settings.get().logs).toEqual(before);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
   it('refuses log channels the bot cannot post in', async () => {

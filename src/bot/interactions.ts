@@ -163,7 +163,8 @@ export function createInteractionHandler(deps: {
   async function handleAutocomplete(i: AutocompleteInteraction): Promise<void> {
     const command = services.registry.find(commandPath(i));
     const focused = i.options.getFocused(true);
-    const handler = command?.leaf.autocomplete?.[focused.name];
+    const handlers = command?.leaf.autocomplete;
+    const handler = handlers && Object.hasOwn(handlers, focused.name) ? handlers[focused.name] : undefined;
     if (!command || !handler || !i.inCachedGuild()) {
       await i.respond([]);
       return;

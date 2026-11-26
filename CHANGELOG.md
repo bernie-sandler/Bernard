@@ -13,6 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - That's crazy votes. When someone says something wild, anyone can run `/thatscrazy user` (`public:thatscrazy`): Bernard posts a short poll with a vote button, and more `/thatscrazy` calls on the same member add votes to it instead of starting another. The votes needed scale with how many people are in the member's voice channel. A passed vote is a strike, and each strike gets the next penalty from a configurable ladder (server mute, server deafen, keep out of voice, or timeout, for a set number of minutes) plus a DM whose text can differ per strike. Mutes and disconnects for someone not in voice wait until they join. Cooldowns per target and per starter, exempt roles and a strike window keep it from being abused. Off by default; set it up in the new **That's crazy** section of the Settings page. `/crazy strikes` and `/crazy reset` (`admin:crazy`) show and clear a member's strikes.
 - The bot asks for the **Mute Members** and **Deafen Members** permissions (for That's crazy). Re-invite with `pnpm invite-url` to add them.
 
+### Fixed
+
+- Hardened two dashboard API routes flagged by CodeQL. Changing settings now refuses keys the section doesn't have (with a 400 naming them) instead of merging them in, so a crafted request can't reach `Object.prototype`. Command autocomplete only uses a command's own handlers, so an option name like `constructor` returns no suggestions instead of an error.
+
 ## [0.2.0] - 2026-11-17
 
 ### Added
